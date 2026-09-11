@@ -11,7 +11,9 @@
     "verify:phase2": "node src/scripts/verify_phase2.js",
     "verify:phase3": "node src/scripts/verify_phase3.js",
     "verify:phase4": "node src/scripts/verify_phase4.js",
-    "verify:phase5": "node src/scripts/verify_phase5.js"
+    "verify:phase5": "node src/scripts/verify_phase5.js",
+    "verify:e2e": "node src/scripts/verify_e2e.js",
+    "test": "node src/scripts/verify_e2e.js"
   },
   "keywords": ["campuseats", "food-preorder", "express", "mysql"],
   "author": "",
