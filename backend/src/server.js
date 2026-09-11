@@ -19,6 +19,11 @@ const io = new Server(server, {
   }
 });
 
+const { setSocketIO } = require('./services/socketService');
+const { initCron } = require('./services/cronService');
+
+setSocketIO(io);
+
 // Attach io instance to app
 app.set('io', io);
 
@@ -45,6 +50,7 @@ io.on('connection', (socket) => {
 async function startServer() {
   try {
     await testConnection();
+    initCron();
     server.listen(PORT, () => {
       console.log(`=============================================`);
       console.log(`  CampusEats API Server Running on Port ${PORT}`);

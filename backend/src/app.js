@@ -41,11 +41,15 @@ const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const canteenRoutes = require('./routes/canteenRoutes');
 const menuRoutes = require('./routes/menuRoutes');
+const orderRoutes = require('./routes/orderRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/canteens', canteenRoutes);
 app.use('/api/menu', menuRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/admin', adminRoutes);
 
 // 404 handler for unhandled routes
 app.use((req, res, next) => {
