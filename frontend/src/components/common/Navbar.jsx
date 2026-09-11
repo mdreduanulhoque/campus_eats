@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
+import { useSocket } from '../../context/SocketContext';
+import api from '../../api/client';
 import { 
   ShoppingBag, 
   User, 
@@ -12,14 +14,35 @@ import {
   Award, 
   LayoutDashboard,
   Store,
-  FileText
+  FileText,
+  Bell
 } from 'lucide-react';
 
 export const Navbar = ({ onOpenCart }) => {
   const { user, logout } = useAuth();
   const { totalItemCount } = useCart();
+  const { liveEvent } = useSocket();
   const navigate = useNavigate();
   const location = useLocation();
+
+  const [showNotifs, setShowNotifs] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+
+  const fetchNotifications = async () => {
+    if (!user) return;
+    try {
+      const res = await api.get('/users/notifications');
+      setNotifications(res.data.data.notifications || []);
+    } catch (err) {
+      console.error('Error fetching navbar notifications:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [user, liveEvent]);
+
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   const handleLogout = () => {
     logout();
@@ -119,6 +142,46 @@ export const Navbar = ({ onOpenCart }) => {
                     <span className="hidden sm:inline">Super Admin</span>
                   </Link>
                 )}
+
+                {/* Notifications Bell Dropdown */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowNotifs(!showNotifs)}
+                    className="p-2 rounded-full text-gray-600 hover:bg-gray-100 relative transition-colors cursor-pointer"
+                    title="Notifications"
+                  >
+                    <Bell className="w-5 h-5" />
+                    {unreadCount > 0 && (
+                      <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-orange-500 rounded-full border-2 border-white ring-1 ring-orange-500 animate-pulse" />
+                    )}
+                  </button>
+
+                  {showNotifs && (
+                    <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 p-4 z-50 animate-scale-in">
+                      <div className="flex items-center justify-between pb-2 mb-2 border-b border-gray-100">
+                        <span className="font-extrabold text-xs text-gray-900">Notifications</span>
+                        <span className="text-[10px] font-bold text-gray-400">{notifications.length} alerts</span>
+                      </div>
+                      <div className="max-h-64 overflow-y-auto space-y-2">
+                        {notifications.length === 0 ? (
+                          <p className="text-xs text-gray-400 py-4 text-center">No notifications yet</p>
+                        ) : (
+                          notifications.slice(0, 5).map((n) => (
+                            <div
+                              key={n.id}
+                              className={`p-2.5 rounded-xl text-xs transition-colors ${
+                                n.is_read ? 'bg-gray-50 text-gray-600' : 'bg-orange-50/80 text-gray-900 font-semibold'
+                              }`}
+                            >
+                              <p className="font-bold text-gray-900 text-[11px]">{n.title}</p>
+                              <p className="text-[11px] text-gray-600 mt-0.5">{n.message}</p>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {/* Profile Link */}
                 <Link

@@ -12,14 +12,18 @@ import {
   ToggleRight,
   Flame,
   ChefHat,
-  BellRing
+  BellRing,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
+import { playOrderChime } from '../../utils/audio';
 
 export const KitchenBoard = () => {
   const { user } = useAuth();
   const { liveEvent } = useSocket();
 
   const [activeTab, setActiveTab] = useState('orders'); // 'orders' | 'stock'
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [orders, setOrders] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -50,6 +54,9 @@ export const KitchenBoard = () => {
   // Real-time auto-refresh on socket event
   useEffect(() => {
     if (liveEvent) {
+      if (liveEvent.type === 'new_order' && soundEnabled) {
+        playOrderChime();
+      }
       fetchCanteenData();
     }
   }, [liveEvent]);
@@ -105,24 +112,39 @@ export const KitchenBoard = () => {
           </div>
         </div>
 
-        {/* Tab switch */}
-        <div className="flex bg-gray-100 p-1 rounded-xl gap-1 self-start sm:self-auto text-xs font-bold">
+        {/* Controls & Tab switch */}
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => setActiveTab('orders')}
-            className={`px-4 py-2 rounded-lg transition-all ${
-              activeTab === 'orders' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-900'
+            onClick={() => setSoundEnabled(!soundEnabled)}
+            className={`p-2 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+              soundEnabled
+                ? 'bg-orange-50 border-orange-200 text-orange-700'
+                : 'bg-gray-100 border-gray-200 text-gray-400'
             }`}
+            title={soundEnabled ? 'Chime Enabled' : 'Chime Muted'}
           >
-            Orders Board ({orders.length})
+            {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            <span className="hidden sm:inline">{soundEnabled ? 'Chime On' : 'Muted'}</span>
           </button>
-          <button
-            onClick={() => setActiveTab('stock')}
-            className={`px-4 py-2 rounded-lg transition-all ${
-              activeTab === 'stock' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-900'
-            }`}
-          >
-            Menu Stock Availability ({menuItems.length})
-          </button>
+
+          <div className="flex bg-gray-100 p-1 rounded-xl gap-1 self-start sm:self-auto text-xs font-bold">
+            <button
+              onClick={() => setActiveTab('orders')}
+              className={`px-4 py-2 rounded-lg transition-all ${
+                activeTab === 'orders' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              Orders Board ({orders.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('stock')}
+              className={`px-4 py-2 rounded-lg transition-all ${
+                activeTab === 'stock' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              Menu Stock ({menuItems.length})
+            </button>
+          </div>
         </div>
       </div>
 

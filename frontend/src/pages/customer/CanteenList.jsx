@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
+import { BudgetProgressBar } from '../../components/customer/BudgetProgressBar';
 import { Store, MapPin, UtensilsCrossed, ShieldAlert, Search, ArrowRight } from 'lucide-react';
 
 export const CanteenList = () => {
@@ -46,6 +47,11 @@ export const CanteenList = () => {
             </p>
           </div>
         </div>
+      )}
+
+      {/* Daily Budget Status Bar */}
+      {user?.role === 'user' && !user?.is_blocked && (
+        <BudgetProgressBar />
       )}
 
       {/* Hero / Banner */}
