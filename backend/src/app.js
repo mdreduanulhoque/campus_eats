@@ -39,9 +39,13 @@ app.get('/api/health', async (req, res) => {
 // API Routes
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
+const canteenRoutes = require('./routes/canteenRoutes');
+const menuRoutes = require('./routes/menuRoutes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/canteens', canteenRoutes);
+app.use('/api/menu', menuRoutes);
 
 // 404 handler for unhandled routes
 app.use((req, res, next) => {

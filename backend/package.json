@@ -8,7 +8,8 @@
     "dev": "nodemon src/server.js",
     "seed": "node src/scripts/seed.js",
     "verify": "node src/scripts/verify_phase1.js",
-    "verify:phase2": "node src/scripts/verify_phase2.js"
+    "verify:phase2": "node src/scripts/verify_phase2.js",
+    "verify:phase3": "node src/scripts/verify_phase3.js"
   },
   "keywords": ["campuseats", "food-preorder", "express", "mysql"],
   "author": "",
