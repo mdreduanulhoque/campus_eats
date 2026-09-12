@@ -33,7 +33,7 @@ export const CanteenList = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 sm:pb-12 space-y-6">
       {/* Blocked User Banner */}
-      {user?.is_blocked && (
+      {Boolean(user?.is_blocked) && (
         <div className="bg-red-50 border-2 border-red-500 rounded-2xl p-4 sm:p-5 flex items-start gap-3.5 shadow-md animate-pulse">
           <ShieldAlert className="w-6 h-6 text-red-600 shrink-0 mt-0.5" />
           <div>
@@ -55,15 +55,15 @@ export const CanteenList = () => {
       )}
 
       {/* Hero / Banner */}
-      <div className="bg-linear-to-r from-orange-500 to-amber-500 rounded-3xl p-6 sm:p-8 text-white shadow-xl shadow-orange-500/10">
+      <div className="bg-orange-500 bg-gradient-to-r from-orange-500 to-amber-500 rounded-3xl p-6 sm:p-8 text-white shadow-xl shadow-orange-500/20">
         <div className="max-w-xl">
-          <span className="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-black uppercase tracking-wider">
+          <span className="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-black uppercase tracking-wider text-white">
             Campus Dining Reimagined
           </span>
-          <h1 className="text-2xl sm:text-4xl font-extrabold mt-3 tracking-tight">
+          <h1 className="text-2xl sm:text-4xl font-extrabold mt-3 tracking-tight text-white">
             Skip the counter rush. Order ahead.
           </h1>
-          <p className="text-sm sm:text-base text-orange-50/90 mt-2 font-medium">
+          <p className="text-sm sm:text-base text-orange-100 mt-2 font-medium">
             Preorder fresh hot meals from your favorite campus cafeterias and pick up right on time.
           </p>
         </div>
