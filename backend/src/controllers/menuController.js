@@ -1,5 +1,53 @@
 const { pool } = require('../config/db');
 
+// GET /api/menu (Public - all items with canteen tag info)
+const getAllMenuItems = async (req, res) => {
+  try {
+    const { available_only, canteen_id, search } = req.query;
+    let query = `
+      SELECT m.id, m.canteen_id, m.name, m.description, m.price, m.image_url,
+             m.est_prep_time_mins, m.is_available, m.created_at,
+             c.name AS canteen_name, c.location AS canteen_location
+      FROM menu_items m
+      JOIN canteens c ON m.canteen_id = c.id
+      WHERE 1=1
+    `;
+    const params = [];
+
+    if (canteen_id) {
+      query += ' AND m.canteen_id = ?';
+      params.push(parseInt(canteen_id, 10));
+    }
+
+    if (available_only === 'true' || available_only === '1') {
+      query += ' AND m.is_available = TRUE';
+    }
+
+    if (search && search.trim()) {
+      query += ' AND (m.name LIKE ? OR m.description LIKE ? OR c.name LIKE ?)';
+      const term = `%${search.trim()}%`;
+      params.push(term, term, term);
+    }
+
+    query += ' ORDER BY c.name ASC, m.name ASC';
+
+    const [items] = await pool.query(query, params);
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        items
+      }
+    });
+  } catch (error) {
+    console.error('[GetAllMenuItems Error]', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Internal server error retrieving menu items.'
+    });
+  }
+};
+
 // GET /api/canteens/:canteenId/menu
 const getMenuByCanteen = async (req, res) => {
   try {
@@ -295,6 +343,7 @@ const toggleAvailability = async (req, res) => {
 };
 
 module.exports = {
+  getAllMenuItems,
   getMenuByCanteen,
   getMenuItemById,
   createMenuItem,

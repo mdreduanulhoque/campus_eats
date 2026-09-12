@@ -46,7 +46,7 @@ export const CanteenMenu = ({ onOpenCart }) => {
         className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-gray-900 transition-colors"
       >
         <ArrowLeft className="w-4 h-4" />
-        Back to Canteens
+        Back to Campus Menu
       </Link>
 
       {/* Canteen Header Info */}
@@ -148,7 +148,7 @@ export const CanteenMenu = ({ onOpenCart }) => {
                   </div>
 
                   <button
-                    disabled={!item.is_available || user?.is_blocked}
+                    disabled={!item.is_available || Boolean(user?.is_blocked)}
                     onClick={() => addItem(item, canteen)}
                     className="px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-200 disabled:text-gray-400 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
                   >

@@ -1,5 +1,6 @@
 const express = require('express');
 const {
+  getAllMenuItems,
   getMenuItemById,
   createMenuItem,
   updateMenuItem,
@@ -11,7 +12,8 @@ const { requireRoles } = require('../middleware/roleMiddleware');
 
 const router = express.Router();
 
-// Public / Authenticated read route
+// Public / Authenticated read routes
+router.get('/', getAllMenuItems);
 router.get('/:id', getMenuItemById);
 
 // Admin operations (Local admin of that canteen or Super admin)

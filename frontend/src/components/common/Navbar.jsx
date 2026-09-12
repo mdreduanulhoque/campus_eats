@@ -206,16 +206,30 @@ export const Navbar = ({ onOpenCart }) => {
                 </button>
               </>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 sm:gap-3">
+                {/* Guest Cart Trigger */}
+                <button
+                  onClick={onOpenCart}
+                  className="relative p-2.5 rounded-full bg-orange-50 hover:bg-orange-100 text-orange-600 transition-colors flex items-center justify-center cursor-pointer"
+                  title="View Cart"
+                >
+                  <ShoppingBag className="w-5 h-5" />
+                  {totalItemCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-orange-500 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-xs animate-scale-in">
+                      {totalItemCount}
+                    </span>
+                  )}
+                </button>
+
                 <Link
                   to="/login"
-                  className="px-4 py-2 text-sm font-bold text-gray-700 hover:text-gray-900 transition-colors"
+                  className="px-3 sm:px-4 py-2 text-sm font-bold text-gray-700 hover:text-gray-900 transition-colors"
                 >
                   Sign In
                 </Link>
                 <Link
                   to="/register"
-                  className="px-4 py-2 text-sm font-bold text-white bg-orange-500 hover:bg-orange-600 rounded-xl shadow-xs transition-colors"
+                  className="px-3 sm:px-4 py-2 text-sm font-bold text-white bg-orange-500 hover:bg-orange-600 rounded-xl shadow-xs transition-colors"
                 >
                   Register
                 </Link>
@@ -224,6 +238,40 @@ export const Navbar = ({ onOpenCart }) => {
           </div>
         </div>
       </header>
+
+      {/* Guest Mobile Bottom Bar */}
+      {!user && (
+        <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 py-2 px-6 flex items-center justify-around shadow-lg">
+          <Link
+            to="/"
+            className={`flex flex-col items-center gap-1 text-xs font-semibold ${
+              location.pathname === '/' ? 'text-orange-500' : 'text-gray-400'
+            }`}
+          >
+            <Utensils className="w-5 h-5" />
+            <span>Menu</span>
+          </Link>
+          <button
+            onClick={onOpenCart}
+            className="flex flex-col items-center gap-1 text-xs font-semibold text-gray-400 relative"
+          >
+            <ShoppingBag className="w-5 h-5" />
+            <span>Cart</span>
+            {totalItemCount > 0 && (
+              <span className="absolute -top-1 right-1 bg-orange-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                {totalItemCount}
+              </span>
+            )}
+          </button>
+          <Link
+            to="/login"
+            className="flex flex-col items-center gap-1 text-xs font-semibold text-orange-600"
+          >
+            <User className="w-5 h-5" />
+            <span>Sign In</span>
+          </Link>
+        </nav>
+      )}
 
       {/* Customer Mobile Bottom Bar */}
       {user && user.role === 'user' && (

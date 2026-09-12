@@ -10,6 +10,7 @@ import { CartDrawer } from './components/customer/CartDrawer';
 
 import { Login } from './pages/auth/Login';
 import { Register } from './pages/auth/Register';
+import { HomePage } from './pages/customer/HomePage';
 import { CanteenList } from './pages/customer/CanteenList';
 import { CanteenMenu } from './pages/customer/CanteenMenu';
 import { OrdersHistory } from './pages/customer/OrdersHistory';
@@ -35,23 +36,21 @@ export function App() {
                   <Route path="/login" element={<Login />} />
                   <Route path="/register" element={<Register />} />
 
-                  {/* Customer Routes (User role) */}
+                  {/* Public Browsing Routes (No account required) */}
                   <Route
                     path="/"
-                    element={
-                      <ProtectedRoute allowedRoles={['user', 'super_admin']}>
-                        <CanteenList />
-                      </ProtectedRoute>
-                    }
+                    element={<HomePage onOpenCart={() => setIsCartOpen(true)} />}
+                  />
+                  <Route
+                    path="/canteens"
+                    element={<CanteenList />}
                   />
                   <Route
                     path="/canteen/:id"
-                    element={
-                      <ProtectedRoute allowedRoles={['user', 'super_admin']}>
-                        <CanteenMenu onOpenCart={() => setIsCartOpen(true)} />
-                      </ProtectedRoute>
-                    }
+                    element={<CanteenMenu onOpenCart={() => setIsCartOpen(true)} />}
                   />
+
+                  {/* Customer Authenticated Routes (Requires user account) */}
                   <Route
                     path="/orders"
                     element={

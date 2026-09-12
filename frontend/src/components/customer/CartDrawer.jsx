@@ -194,8 +194,23 @@ export const CartDrawer = ({ isOpen, onClose }) => {
                   </div>
                 )}
 
-                {/* Budget Guardrail Visual Indicator */}
-                <BudgetProgressBar currentCartTotal={finalTotal} />
+                {/* Budget Guardrail Visual Indicator (Logged in students) */}
+                {user?.role === 'user' && (
+                  <BudgetProgressBar currentCartTotal={finalTotal} />
+                )}
+
+                {/* Guest Notice */}
+                {!user && (
+                  <div className="p-3.5 bg-orange-50/70 border border-orange-200/80 rounded-2xl flex items-start gap-2.5 text-xs text-orange-800">
+                    <span className="text-base">💡</span>
+                    <div>
+                      <p className="font-bold text-orange-950">Browsing as Guest</p>
+                      <p className="text-[11px] text-orange-700 mt-0.5">
+                        Your tray is saved. You can sign in or create an account to finalize and submit your order.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Error Banner */}
                 {errorMessage && (
@@ -227,20 +242,38 @@ export const CartDrawer = ({ isOpen, onClose }) => {
                 </div>
               </div>
 
-              <button
-                disabled={submitting}
-                onClick={handleCheckout}
-                className="w-full py-3.5 px-4 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 text-white font-bold rounded-xl shadow-md shadow-orange-500/20 flex items-center justify-center gap-2 transition-colors cursor-pointer"
-              >
-                {submitting ? (
-                  <span>Submitting Order...</span>
-                ) : (
-                  <>
-                    <span>Confirm Preorder</span>
+              {!user ? (
+                <div className="space-y-2">
+                  <button
+                    onClick={() => {
+                      onClose();
+                      navigate('/login');
+                    }}
+                    className="w-full py-3.5 px-4 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl shadow-md shadow-orange-500/20 flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                  >
+                    <span>Sign in to Place Order</span>
                     <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
+                  </button>
+                  <p className="text-[11px] text-center text-gray-400">
+                    Sign in or register to complete your preorder
+                  </p>
+                </div>
+              ) : (
+                <button
+                  disabled={submitting || Boolean(user?.is_blocked)}
+                  onClick={handleCheckout}
+                  className="w-full py-3.5 px-4 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 text-white font-bold rounded-xl shadow-md shadow-orange-500/20 flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                >
+                  {submitting ? (
+                    <span>Submitting Order...</span>
+                  ) : (
+                    <>
+                      <span>Confirm Preorder</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           )}
         </div>
