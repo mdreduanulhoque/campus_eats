@@ -98,7 +98,7 @@ const getMenuItemById = async (req, res) => {
     const [rows] = await pool.query(
       `SELECT m.id, m.canteen_id, m.name, m.description, m.price, m.image_url,
               m.est_prep_time_mins, m.is_available, m.created_at,
-              c.name AS canteen_name
+              c.name AS canteen_name, c.location AS canteen_location
        FROM menu_items m
        JOIN canteens c ON m.canteen_id = c.id
        WHERE m.id = ?`,
@@ -342,10 +342,109 @@ const toggleAvailability = async (req, res) => {
   }
 };
 
+// GET /api/menu/compare?item1=X&item2=Y or ?ids=X,Y
+const compareMenuItems = async (req, res) => {
+  try {
+    const { item1, item2, ids } = req.query;
+    let id1, id2;
+
+    if (item1 && item2) {
+      id1 = parseInt(item1, 10);
+      id2 = parseInt(item2, 10);
+    } else if (ids) {
+      const parts = ids.split(',').map((p) => parseInt(p.trim(), 10));
+      id1 = parts[0];
+      id2 = parts[1];
+    }
+
+    if (!id1 || !id2 || isNaN(id1) || isNaN(id2)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Two valid menu item IDs are required for comparison (e.g., ?item1=1&item2=2).'
+      });
+    }
+
+    if (id1 === id2) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Cannot compare an item with itself. Please select two different items.'
+      });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT m.id, m.canteen_id, m.name, m.description, m.price, m.image_url,
+              m.est_prep_time_mins, m.is_available, m.created_at,
+              c.name AS canteen_name, c.location AS canteen_location
+       FROM menu_items m
+       JOIN canteens c ON m.canteen_id = c.id
+       WHERE m.id IN (?, ?)`,
+      [id1, id2]
+    );
+
+    if (rows.length < 2) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'One or both menu items could not be found for comparison.'
+      });
+    }
+
+    const firstItem = rows.find((r) => r.id === id1);
+    const secondItem = rows.find((r) => r.id === id2);
+
+    const price1 = parseFloat(firstItem.price);
+    const price2 = parseFloat(secondItem.price);
+    const priceDiff = Math.abs(price1 - price2);
+    let cheaperId = null;
+    let cheaperDiffPercent = 0;
+    if (price1 < price2) {
+      cheaperId = firstItem.id;
+      cheaperDiffPercent = price2 > 0 ? Math.round(((price2 - price1) / price2) * 100) : 0;
+    } else if (price2 < price1) {
+      cheaperId = secondItem.id;
+      cheaperDiffPercent = price1 > 0 ? Math.round(((price1 - price2) / price1) * 100) : 0;
+    }
+
+    const prep1 = firstItem.est_prep_time_mins || 10;
+    const prep2 = secondItem.est_prep_time_mins || 10;
+    const prepTimeDiff = Math.abs(prep1 - prep2);
+    let fasterId = null;
+    if (prep1 < prep2) {
+      fasterId = firstItem.id;
+    } else if (prep2 < prep1) {
+      fasterId = secondItem.id;
+    }
+
+    const sameCanteen = firstItem.canteen_id === secondItem.canteen_id;
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        item1: firstItem,
+        item2: secondItem,
+        metrics: {
+          price_diff: priceDiff,
+          cheaper_item_id: cheaperId,
+          cheaper_diff_percent: cheaperDiffPercent,
+          prep_time_diff: prepTimeDiff,
+          faster_item_id: fasterId,
+          same_canteen: sameCanteen
+        }
+      }
+    });
+  } catch (error) {
+    console.error('[CompareMenuItems Error]', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Internal server error comparing menu items.'
+    });
+  }
+};
+
 module.exports = {
   getAllMenuItems,
   getMenuByCanteen,
   getMenuItemById,
+  compareMenuItems,
   createMenuItem,
   updateMenuItem,
   deleteMenuItem,

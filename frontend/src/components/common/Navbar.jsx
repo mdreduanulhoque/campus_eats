@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
 import { useSocket } from '../../context/SocketContext';
+import { useCompare } from '../../context/CompareContext';
 import api from '../../api/client';
 import { 
   ShoppingBag, 
@@ -15,13 +16,15 @@ import {
   LayoutDashboard,
   Store,
   FileText,
-  Bell
+  Bell,
+  ArrowLeftRight
 } from 'lucide-react';
 
 export const Navbar = ({ onOpenCart }) => {
   const { user, logout } = useAuth();
   const { totalItemCount } = useCart();
   const { liveEvent } = useSocket();
+  const { comparedItems, openCompareModal } = useCompare();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -81,6 +84,20 @@ export const Navbar = ({ onOpenCart }) => {
                       <Award className="w-3.5 h-3.5 text-amber-600" />
                       <span>{user.loyalty_points || 0} pts</span>
                     </div>
+
+                    {/* Compare Trigger */}
+                    <button
+                      onClick={openCompareModal}
+                      className="relative p-2.5 rounded-full bg-orange-50 hover:bg-orange-100 text-orange-600 transition-colors flex items-center justify-center cursor-pointer"
+                      title="Compare Dishes"
+                    >
+                      <ArrowLeftRight className="w-5 h-5" />
+                      {comparedItems.length > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-orange-600 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-xs animate-scale-in">
+                          {comparedItems.length}
+                        </span>
+                      )}
+                    </button>
 
                     {/* Cart Trigger */}
                     <button
@@ -207,6 +224,20 @@ export const Navbar = ({ onOpenCart }) => {
               </>
             ) : (
               <div className="flex items-center gap-2 sm:gap-3">
+                {/* Guest Compare Trigger */}
+                <button
+                  onClick={openCompareModal}
+                  className="relative p-2.5 rounded-full bg-orange-50 hover:bg-orange-100 text-orange-600 transition-colors flex items-center justify-center cursor-pointer"
+                  title="Compare Dishes"
+                >
+                  <ArrowLeftRight className="w-5 h-5" />
+                  {comparedItems.length > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-orange-600 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-xs animate-scale-in">
+                      {comparedItems.length}
+                    </span>
+                  )}
+                </button>
+
                 {/* Guest Cart Trigger */}
                 <button
                   onClick={onOpenCart}
@@ -252,6 +283,20 @@ export const Navbar = ({ onOpenCart }) => {
             <span>Menu</span>
           </Link>
           <button
+            onClick={openCompareModal}
+            className={`flex flex-col items-center gap-1 text-xs font-semibold relative ${
+              comparedItems.length > 0 ? 'text-orange-500' : 'text-gray-400'
+            }`}
+          >
+            <ArrowLeftRight className="w-5 h-5" />
+            <span>Compare</span>
+            {comparedItems.length > 0 && (
+              <span className="absolute -top-1 right-2 bg-orange-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                {comparedItems.length}
+              </span>
+            )}
+          </button>
+          <button
             onClick={onOpenCart}
             className="flex flex-col items-center gap-1 text-xs font-semibold text-gray-400 relative"
           >
@@ -275,7 +320,7 @@ export const Navbar = ({ onOpenCart }) => {
 
       {/* Customer Mobile Bottom Bar */}
       {user && user.role === 'user' && (
-        <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 py-2 px-6 flex items-center justify-around shadow-lg">
+        <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 py-2 px-4 flex items-center justify-around shadow-lg">
           <Link
             to="/"
             className={`flex flex-col items-center gap-1 text-xs font-semibold ${
@@ -285,6 +330,20 @@ export const Navbar = ({ onOpenCart }) => {
             <Store className="w-5 h-5" />
             <span>Canteens</span>
           </Link>
+          <button
+            onClick={openCompareModal}
+            className={`flex flex-col items-center gap-1 text-xs font-semibold relative ${
+              comparedItems.length > 0 ? 'text-orange-500' : 'text-gray-400'
+            }`}
+          >
+            <ArrowLeftRight className="w-5 h-5" />
+            <span>Compare</span>
+            {comparedItems.length > 0 && (
+              <span className="absolute -top-1 right-1 bg-orange-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                {comparedItems.length}
+              </span>
+            )}
+          </button>
           <Link
             to="/orders"
             className={`flex flex-col items-center gap-1 text-xs font-semibold ${
@@ -292,7 +351,7 @@ export const Navbar = ({ onOpenCart }) => {
             }`}
           >
             <FileText className="w-5 h-5" />
-            <span>My Orders</span>
+            <span>Orders</span>
           </Link>
           <button
             onClick={onOpenCart}

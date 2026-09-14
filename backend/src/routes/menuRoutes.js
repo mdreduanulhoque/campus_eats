@@ -2,6 +2,7 @@ const express = require('express');
 const {
   getAllMenuItems,
   getMenuItemById,
+  compareMenuItems,
   createMenuItem,
   updateMenuItem,
   deleteMenuItem,
@@ -14,6 +15,7 @@ const router = express.Router();
 
 // Public / Authenticated read routes
 router.get('/', getAllMenuItems);
+router.get('/compare', compareMenuItems);
 router.get('/:id', getMenuItemById);
 
 // Admin operations (Local admin of that canteen or Super admin)

@@ -3,12 +3,14 @@ import { useParams, Link } from 'react-router-dom';
 import api from '../../api/client';
 import { useCart } from '../../context/CartContext';
 import { useAuth } from '../../context/AuthContext';
-import { Store, MapPin, Clock, Plus, ShoppingBag, ArrowLeft, Search } from 'lucide-react';
+import { useCompare } from '../../context/CompareContext';
+import { Store, MapPin, Clock, Plus, ShoppingBag, ArrowLeft, Search, ArrowLeftRight, Check } from 'lucide-react';
 
 export const CanteenMenu = ({ onOpenCart }) => {
   const { id } = useParams();
   const { addItem, totalItemCount } = useCart();
   const { user } = useAuth();
+  const { toggleCompare, isInCompare } = useCompare();
 
   const [canteen, setCanteen] = useState(null);
   const [menuItems, setMenuItems] = useState([]);
@@ -139,7 +141,7 @@ export const CanteenMenu = ({ onOpenCart }) => {
                   <p className="text-xs text-gray-500 mt-1 line-clamp-2">{item.description}</p>
                 </div>
 
-                <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between">
+                <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
                   <div>
                     <span className="text-xs text-gray-400 font-semibold">Price</span>
                     <p className="text-lg font-black text-gray-900 leading-none mt-0.5">
@@ -147,14 +149,38 @@ export const CanteenMenu = ({ onOpenCart }) => {
                     </p>
                   </div>
 
-                  <button
-                    disabled={!item.is_available || Boolean(user?.is_blocked)}
-                    onClick={() => addItem(item, canteen)}
-                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-200 disabled:text-gray-400 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>{item.is_available ? 'Add to Cart' : 'Out of Stock'}</span>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => toggleCompare(item, canteen)}
+                      className={`p-2 rounded-xl border text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                        isInCompare(item.id)
+                          ? 'bg-orange-500 text-white border-orange-500 shadow-xs'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50/50'
+                      }`}
+                      title={isInCompare(item.id) ? 'Remove from compare' : 'Compare with another dish'}
+                    >
+                      {isInCompare(item.id) ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-white" />
+                          <span className="hidden sm:inline text-[11px]">Added</span>
+                        </>
+                      ) : (
+                        <>
+                          <ArrowLeftRight className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline text-[11px]">Compare</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      disabled={!item.is_available || Boolean(user?.is_blocked)}
+                      onClick={() => addItem(item, canteen)}
+                      className="px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-200 disabled:text-gray-400 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>{item.is_available ? 'Add to Cart' : 'Out of Stock'}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
