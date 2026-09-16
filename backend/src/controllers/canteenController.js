@@ -5,13 +5,17 @@ const { pool } = require('../config/db');
 const getAllCanteens = async (req, res) => {
   try {
     const [canteens] = await pool.query(`
-      SELECT c.id, c.name, c.location, c.created_at,
+      SELECT c.id, c.name, c.location, c.is_open, c.created_at,
              COUNT(m.id) AS total_menu_items
       FROM canteens c
       LEFT JOIN menu_items m ON c.id = m.canteen_id
       GROUP BY c.id
       ORDER BY c.name ASC
     `);
+
+    canteens.forEach(c => {
+      c.is_open = Boolean(c.is_open);
+    });
 
     res.status(200).json({
       status: 'success',
@@ -37,7 +41,7 @@ const getCanteenById = async (req, res) => {
     }
 
     const [rows] = await pool.query(
-      `SELECT c.id, c.name, c.location, c.created_at,
+      `SELECT c.id, c.name, c.location, c.is_open, c.created_at,
               COUNT(m.id) AS total_menu_items
        FROM canteens c
        LEFT JOIN menu_items m ON c.id = m.canteen_id
@@ -50,10 +54,13 @@ const getCanteenById = async (req, res) => {
       return res.status(404).json({ status: 'error', message: 'Canteen not found.' });
     }
 
+    const canteen = rows[0];
+    canteen.is_open = Boolean(canteen.is_open);
+
     res.status(200).json({
       status: 'success',
       data: {
-        canteen: rows[0]
+        canteen
       }
     });
   } catch (error) {
@@ -298,6 +305,97 @@ const createCanteenStaff = async (req, res) => {
   }
 };
 
+// PATCH /api/canteens/:id/status (Toggle kitchen open / closed)
+const toggleCanteenStatus = async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const canteenId = parseInt(req.params.id, 10);
+    if (isNaN(canteenId)) {
+      return res.status(400).json({ status: 'error', message: 'Invalid canteen ID.' });
+    }
+
+    const { is_open } = req.body;
+
+    const [canteens] = await connection.query('SELECT id, name, is_open FROM canteens WHERE id = ?', [canteenId]);
+    if (canteens.length === 0) {
+      return res.status(404).json({ status: 'error', message: 'Canteen not found.' });
+    }
+
+    const currentStatus = Boolean(canteens[0].is_open);
+    const targetStatus = is_open !== undefined ? Boolean(is_open) : !currentStatus;
+
+    await connection.beginTransaction();
+
+    if (!targetStatus) {
+      // SHUTTING DOWN CANTEEN / KITCHEN:
+      // 1. Mark canteen as closed (is_open = FALSE)
+      await connection.query('UPDATE canteens SET is_open = FALSE WHERE id = ?', [canteenId]);
+
+      // 2. Save current availability state in was_available_before_close, then set is_available = FALSE
+      // Preserve existing was_available_before_close if already set (e.g. repeated calls)
+      await connection.query(
+        `UPDATE menu_items 
+         SET was_available_before_close = COALESCE(was_available_before_close, is_available),
+             is_available = FALSE
+         WHERE canteen_id = ?`,
+        [canteenId]
+      );
+    } else {
+      // REOPENING CANTEEN / KITCHEN:
+      // 1. Mark canteen as open (is_open = TRUE)
+      await connection.query('UPDATE canteens SET is_open = TRUE WHERE id = ?', [canteenId]);
+
+      // 2. Restore ONLY those items that were open/available before shutting down!
+      // Any item that had was_available_before_close = 0 (or FALSE) stays FALSE.
+      // Any item that had was_available_before_close = 1 (or TRUE) becomes TRUE.
+      await connection.query(
+        `UPDATE menu_items 
+         SET is_available = COALESCE(was_available_before_close, is_available, TRUE),
+             was_available_before_close = NULL
+         WHERE canteen_id = ?`,
+        [canteenId]
+      );
+    }
+
+    await connection.commit();
+
+    // Fetch updated canteen and items count
+    const [updatedCanteen] = await connection.query(
+      'SELECT id, name, location, is_open FROM canteens WHERE id = ?',
+      [canteenId]
+    );
+
+    const [items] = await connection.query(
+      'SELECT id, name, is_available FROM menu_items WHERE canteen_id = ?',
+      [canteenId]
+    );
+
+    const availableCount = items.filter(i => Boolean(i.is_available)).length;
+
+    res.status(200).json({
+      status: 'success',
+      message: `Canteen '${canteens[0].name}' kitchen is now ${targetStatus ? 'OPEN' : 'CLOSED'}.`,
+      data: {
+        canteen: {
+          ...updatedCanteen[0],
+          is_open: Boolean(updatedCanteen[0].is_open)
+        },
+        total_items: items.length,
+        available_items: availableCount
+      }
+    });
+  } catch (error) {
+    await connection.rollback();
+    console.error('[ToggleCanteenStatus Error]', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Internal server error toggling canteen kitchen status.'
+    });
+  } finally {
+    connection.release();
+  }
+};
+
 module.exports = {
   getAllCanteens,
   getCanteenById,
@@ -305,5 +403,6 @@ module.exports = {
   updateCanteen,
   assignLocalAdmin,
   getCanteenStaff,
-  createCanteenStaff
+  createCanteenStaff,
+  toggleCanteenStatus
 };

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../../context/CartContext';
 import { useAuth } from '../../context/AuthContext';
@@ -11,13 +11,54 @@ export const CartDrawer = ({ isOpen, onClose }) => {
   const { user, reloadProfile } = useAuth();
   const navigate = useNavigate();
 
-  const [pickupTime, setPickupTime] = useState(() => {
-    // Default to 15 minutes from now
-    const now = new Date(Date.now() + 15 * 60000);
-    return now.toISOString().slice(0, 16);
-  });
+  // Helper date formatters
+  const formatToLocalISO = (d) => {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const formatTimeOnly = (d) => {
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  // Calculate total required preparation time for the cart items
+  const totalPrepMinutes = Math.min(
+    cart.items.reduce((sum, item) => {
+      const prep = parseInt(item.est_prep_time_mins, 10) || 10;
+      const qty = parseInt(item.quantity, 10) || 1;
+      return sum + prep * qty;
+    }, 0),
+    90
+  );
+
+  // Dynamic window calculations
+  const now = new Date();
+  const earliestPickup = new Date(now.getTime() + totalPrepMinutes * 60 * 1000);
+  // Upper limit: 2 hours from current time (119 minutes so it ends at HH:59 within 2h)
+  const latestPickup = new Date(now.getTime() + 119 * 60 * 1000);
+
+  const today7AM = new Date(now);
+  today7AM.setHours(7, 0, 0, 0);
+
+  const today7PM = new Date(now);
+  today7PM.setHours(19, 0, 0, 0);
+
+  const effectiveMin = earliestPickup > today7AM ? earliestPickup : today7AM;
+  const effectiveMax = latestPickup < today7PM ? latestPickup : today7PM;
+  const isWindowClosed = effectiveMin >= effectiveMax || now >= today7PM;
+
+  const [pickupTime, setPickupTime] = useState(() => formatToLocalISO(effectiveMin));
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Keep pickupTime synchronized with valid min/max window when cart changes or drawer opens
+  useEffect(() => {
+    if (cart.items.length > 0 && isOpen) {
+      if (!pickupTime || new Date(pickupTime) < effectiveMin || new Date(pickupTime) > effectiveMax) {
+        setPickupTime(formatToLocalISO(effectiveMin));
+      }
+    }
+  }, [cart.items, isOpen, totalPrepMinutes]);
 
   if (!isOpen) return null;
 
@@ -25,15 +66,54 @@ export const CartDrawer = ({ isOpen, onClose }) => {
     setErrorMessage('');
     if (cart.items.length === 0) return;
 
+    if (isWindowClosed) {
+      setErrorMessage('Kitchen is closed or does not have enough time for preparation before 7:00 PM.');
+      return;
+    }
+
     if (!pickupTime) {
       setErrorMessage('Please select a requested pickup time.');
+      return;
+    }
+
+    const selectedDate = new Date(pickupTime);
+    if (isNaN(selectedDate.getTime())) {
+      setErrorMessage('Please select a valid pickup date and time.');
+      return;
+    }
+
+    const checkNow = new Date();
+    // Leeway of 30 seconds for clock differences / delay
+    const minAllowed = new Date(checkNow.getTime() + totalPrepMinutes * 60 * 1000 - 30 * 1000);
+    const maxAllowed = new Date(checkNow.getTime() + 2 * 60 * 60 * 1000 + 30 * 1000);
+
+    if (selectedDate < minAllowed) {
+      setErrorMessage(
+        `Pickup time must be after ${formatTimeOnly(effectiveMin)} (at least ${totalPrepMinutes} mins from now to allow kitchen preparation).`
+      );
+      return;
+    }
+
+    if (selectedDate > maxAllowed) {
+      setErrorMessage(
+        `Pickup time must be within a 2-hour window from now (before ${formatTimeOnly(effectiveMax)}).`
+      );
+      return;
+    }
+
+    // Validate 7:00 AM (420 mins) to 7:00 PM (1140 mins)
+    const hours = selectedDate.getHours();
+    const minutes = selectedDate.getMinutes();
+    const totalMinutes = hours * 60 + minutes;
+    if (totalMinutes < 420 || totalMinutes > 1140) {
+      setErrorMessage('Pickup time must be between 7:00 AM and 7:00 PM.');
       return;
     }
 
     setSubmitting(true);
     try {
       // Format pickup time as ISO string
-      const isoPickup = new Date(pickupTime).toISOString();
+      const isoPickup = selectedDate.toISOString();
 
       const payload = {
         canteen_id: cart.canteenId,
@@ -145,21 +225,44 @@ export const CartDrawer = ({ isOpen, onClose }) => {
             {cart.items.length > 0 && (
               <div className="space-y-4 pt-2">
                 {/* Pickup Time Picker */}
-                <div className="p-3.5 bg-gray-50 rounded-2xl border border-gray-100">
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 flex items-center gap-1.5">
-                    <Clock className="w-4 h-4 text-orange-500" />
-                    Requested Pickup Time
-                  </label>
+                <div className="p-3.5 bg-gray-50 rounded-2xl border border-gray-100 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                      <Clock className="w-4 h-4 text-orange-500" />
+                      Requested Pickup Time
+                    </label>
+                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-orange-100 text-orange-800">
+                      Prep: ~{totalPrepMinutes} mins
+                    </span>
+                  </div>
+
                   <input
                     type="datetime-local"
                     value={pickupTime}
-                    min={new Date().toISOString().slice(0, 16)}
+                    min={formatToLocalISO(effectiveMin)}
+                    max={formatToLocalISO(effectiveMax)}
+                    disabled={isWindowClosed}
                     onChange={(e) => setPickupTime(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
                   />
-                  <p className="text-[10px] text-gray-400 mt-1">
-                    Kitchen will review and confirm this preparation window.
-                  </p>
+
+                  {isWindowClosed ? (
+                    <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-bold">
+                      Canteen is closed or closing soon. Not enough time for preparation before 7:00 PM.
+                    </div>
+                  ) : (
+                    <div className="p-2.5 rounded-xl bg-orange-50/70 border border-orange-200/80 text-[11px] space-y-1">
+                      <div className="flex items-center justify-between font-bold text-orange-950">
+                        <span>Allowed Pickup Window (2h limit):</span>
+                        <span className="font-extrabold text-orange-700">
+                          {formatTimeOnly(effectiveMin)} – {formatTimeOnly(effectiveMax)}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-orange-800/80 leading-relaxed">
+                        Must be after {formatTimeOnly(effectiveMin)} (prep time) and within 2 hours from now. Canteen hours: 7:00 AM – 7:00 PM.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Loyalty Points Redemption */}
@@ -260,12 +363,14 @@ export const CartDrawer = ({ isOpen, onClose }) => {
                 </div>
               ) : (
                 <button
-                  disabled={submitting || Boolean(user?.is_blocked)}
+                  disabled={submitting || Boolean(user?.is_blocked) || isWindowClosed}
                   onClick={handleCheckout}
-                  className="w-full py-3.5 px-4 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 text-white font-bold rounded-xl shadow-md shadow-orange-500/20 flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                  className="w-full py-3.5 px-4 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 text-white font-bold rounded-xl shadow-md shadow-orange-500/20 flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:cursor-not-allowed"
                 >
                   {submitting ? (
                     <span>Submitting Order...</span>
+                  ) : isWindowClosed ? (
+                    <span>Kitchen Closed for Today</span>
                   ) : (
                     <>
                       <span>Confirm Preorder</span>

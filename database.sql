@@ -6,6 +6,7 @@ CREATE TABLE canteens (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     location VARCHAR(255),
+    is_open BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -35,6 +36,7 @@ CREATE TABLE menu_items (
     image_url VARCHAR(255),
     est_prep_time_mins INT DEFAULT 10,
     is_available BOOLEAN DEFAULT TRUE, -- Kitchen toggles this when stock ends
+    was_available_before_close BOOLEAN NULL DEFAULT NULL, -- Stores state prior to canteen shutdown
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (canteen_id) REFERENCES canteens(id) ON DELETE CASCADE
 );
@@ -83,7 +85,8 @@ CREATE TABLE reviews (
     comment TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (menu_item_id) REFERENCES menu_items(id) ON DELETE CASCADE
+    FOREIGN KEY (menu_item_id) REFERENCES menu_items(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_user_item_review (user_id, menu_item_id)
 );
 
 -- 7. Notifications

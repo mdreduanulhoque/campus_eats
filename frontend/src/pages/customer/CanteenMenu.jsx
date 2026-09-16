@@ -71,6 +71,11 @@ export const CanteenMenu = ({ onOpenCart }) => {
             <div className="flex items-center gap-2 text-xs font-bold text-orange-600 mb-1">
               <Store className="w-4 h-4" />
               <span>Campus Dining Partner</span>
+              <span className={`ml-2 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                canteen.is_open ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+              }`}>
+                {canteen.is_open ? 'Kitchen Open' : 'Kitchen Closed'}
+              </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">
               {canteen.name}
@@ -90,6 +95,19 @@ export const CanteenMenu = ({ onOpenCart }) => {
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-9 pr-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500"
             />
+          </div>
+        </div>
+      )}
+
+      {/* Kitchen Closed Alert Banner */}
+      {canteen && !canteen.is_open && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-900 rounded-3xl p-4 sm:p-5 flex items-start gap-3.5 shadow-xs">
+          <Store className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+          <div>
+            <h2 className="text-sm font-extrabold text-rose-950">Kitchen is Currently Closed</h2>
+            <p className="text-xs text-rose-700 mt-0.5">
+              This canteen is not accepting orders at this time. All dishes are disabled until the local admin reopens the kitchen.
+            </p>
           </div>
         </div>
       )}
@@ -210,12 +228,12 @@ export const CanteenMenu = ({ onOpenCart }) => {
                     </button>
 
                     <button
-                      disabled={!item.is_available || Boolean(user?.is_blocked)}
+                      disabled={!item.is_available || !canteen?.is_open || Boolean(user?.is_blocked)}
                       onClick={() => addItem(item, canteen)}
                       className="px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-200 disabled:text-gray-400 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
                     >
                       <Plus className="w-4 h-4" />
-                      <span>{item.is_available ? 'Add to Cart' : 'Out of Stock'}</span>
+                      <span>{!canteen?.is_open ? 'Kitchen Closed' : item.is_available ? 'Add to Cart' : 'Out of Stock'}</span>
                     </button>
                   </div>
                 </div>

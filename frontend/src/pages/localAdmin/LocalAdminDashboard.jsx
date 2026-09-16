@@ -12,7 +12,9 @@ import {
   CheckCircle2,
   Clock,
   DollarSign,
-  TrendingUp
+  TrendingUp,
+  Power,
+  AlertCircle
 } from 'lucide-react';
 
 export const LocalAdminDashboard = () => {
@@ -21,11 +23,13 @@ export const LocalAdminDashboard = () => {
   const canteenId = user?.canteen_id;
 
   // Data states
+  const [canteen, setCanteen] = useState(null);
   const [menuItems, setMenuItems] = useState([]);
   const [staff, setStaff] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [penalizedUsers, setPenalizedUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [togglingKitchen, setTogglingKitchen] = useState(false);
 
   // Modal / Form states
   const [showItemModal, setShowItemModal] = useState(false);
@@ -35,7 +39,8 @@ export const LocalAdminDashboard = () => {
     description: '',
     price: '',
     est_prep_time_mins: 10,
-    image_url: ''
+    image_url: '',
+    is_available: true
   });
 
   const [showStaffModal, setShowStaffModal] = useState(false);
@@ -48,12 +53,14 @@ export const LocalAdminDashboard = () => {
   const fetchData = async () => {
     if (!canteenId) return;
     try {
-      const [menuRes, staffRes, analyticsRes, penaltiesRes] = await Promise.all([
+      const [canteenRes, menuRes, staffRes, analyticsRes, penaltiesRes] = await Promise.all([
+        api.get(`/canteens/${canteenId}`),
         api.get(`/canteens/${canteenId}/menu`),
         api.get(`/canteens/${canteenId}/staff`),
         api.get(`/admin/analytics/${canteenId}`),
         api.get(`/admin/users/penalized`)
       ]);
+      setCanteen(canteenRes.data.data?.canteen || null);
       setMenuItems(menuRes.data.data.items || []);
       setStaff(staffRes.data.data.staff || []);
       setAnalytics(analyticsRes.data.data);
@@ -68,6 +75,41 @@ export const LocalAdminDashboard = () => {
   useEffect(() => {
     fetchData();
   }, [canteenId]);
+
+  // Toggle Kitchen Open / Closed Status
+  const handleToggleKitchenStatus = async () => {
+    if (!canteen) return;
+    const willClose = Boolean(canteen.is_open);
+    const confirmMessage = willClose
+      ? "Are you sure you want to shut down the kitchen? All dishes will immediately be turned off and disappear from student feeds. When reopened later, only dishes that were currently open will be restored."
+      : "Open the kitchen and resume orders? Only dishes that were active before shutdown will reappear in student feeds.";
+
+    if (!window.confirm(confirmMessage)) return;
+
+    setTogglingKitchen(true);
+    try {
+      const res = await api.patch(`/canteens/${canteenId}/status`, { is_open: !willClose });
+      setCanteen(res.data.data?.canteen);
+      // Re-fetch menu items to reflect updated availability
+      const menuRes = await api.get(`/canteens/${canteenId}/menu`);
+      setMenuItems(menuRes.data.data.items || []);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to toggle kitchen status.');
+    } finally {
+      setTogglingKitchen(false);
+    }
+  };
+
+  // Toggle individual item availability
+  const handleToggleItemAvailability = async (item) => {
+    try {
+      await api.put(`/menu/${item.id}`, { is_available: !item.is_available });
+      const menuRes = await api.get(`/canteens/${canteenId}/menu`);
+      setMenuItems(menuRes.data.data.items || []);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to update item availability.');
+    }
+  };
 
   // Handle Menu Save
   const handleSaveItem = async (e) => {
@@ -126,9 +168,18 @@ export const LocalAdminDashboard = () => {
       {/* Header */}
       <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">Canteen Admin Portal</h1>
-          <p className="text-xs text-gray-500">
-            Manage your canteen menu, assign staff, view peak sales hours, and unblock penalized students.
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">Canteen Admin Portal</h1>
+            {canteen && (
+              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                canteen.is_open ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+              }`}>
+                {canteen.name} • {canteen.is_open ? 'Open' : 'Closed'}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            Manage your canteen kitchen, menu items, staff, sales analytics, and student penalty strikes.
           </p>
         </div>
 
@@ -169,18 +220,69 @@ export const LocalAdminDashboard = () => {
         </div>
       </div>
 
+      {/* Kitchen Status Control Banner */}
+      <div className={`rounded-3xl p-5 sm:p-6 border shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all ${
+        canteen?.is_open
+          ? 'bg-emerald-50/60 border-emerald-200/80 text-emerald-950'
+          : 'bg-rose-50/60 border-rose-200/80 text-rose-950'
+      }`}>
+        <div className="flex items-start sm:items-center gap-4">
+          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-md ${
+            canteen?.is_open ? 'bg-emerald-600 text-white shadow-emerald-500/20' : 'bg-rose-600 text-white shadow-rose-500/20'
+          }`}>
+            <Power className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h2 className="text-base sm:text-lg font-black tracking-tight">
+                Kitchen Status: {canteen?.is_open ? 'OPEN & ACCEPTING PREORDERS' : 'SHUT DOWN & CLOSED'}
+              </h2>
+              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider ${
+                canteen?.is_open ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'
+              }`}>
+                {canteen?.is_open ? 'Live on Feed' : 'Hidden from Feed'}
+              </span>
+            </div>
+            <p className="text-xs sm:text-sm text-gray-600 mt-1">
+              {canteen?.is_open
+                ? 'All available dishes are visible in the student order feed. Turn off to shut down canteen operations.'
+                : 'All dishes are currently disabled and hidden from the student feed. Reopening will restore only dishes that were available before closing.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 shrink-0">
+          <button
+            onClick={handleToggleKitchenStatus}
+            disabled={togglingKitchen}
+            className={`px-5 py-2.5 rounded-2xl text-xs font-black shadow-md cursor-pointer transition-all flex items-center gap-2 ${
+              canteen?.is_open
+                ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/20'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            <Power className="w-4 h-4" />
+            <span>{togglingKitchen ? 'Updating...' : canteen?.is_open ? 'Shut Down Kitchen' : 'Turn On Kitchen'}</span>
+          </button>
+        </div>
+      </div>
+
       {/* TAB 1: Menu Items CRUD */}
       {activeTab === 'menu' && (
         <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-base font-extrabold text-gray-900">Canteen Menu Catalog</h2>
-              <p className="text-xs text-gray-500">Add and update dishes available to students</p>
+              <p className="text-xs text-gray-500">
+                {canteen?.is_open 
+                  ? 'Manage dishes and live availability for student orders.'
+                  : 'Kitchen is currently closed. Dishes will become active based on preserved status when reopened.'}
+              </p>
             </div>
             <button
               onClick={() => {
                 setEditingItem(null);
-                setItemForm({ name: '', description: '', price: '', est_prep_time_mins: 10, image_url: '' });
+                setItemForm({ name: '', description: '', price: '', est_prep_time_mins: 10, image_url: '', is_available: true });
                 setShowItemModal(true);
               }}
               className="flex items-center gap-1.5 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer transition-colors"
@@ -202,8 +304,27 @@ export const LocalAdminDashboard = () => {
                     )}
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-gray-900">{item.name}</h3>
-                    <p className="text-xs text-gray-500">{item.price} BDT • ~{item.est_prep_time_mins} mins prep</p>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-gray-900">{item.name}</h3>
+                      {!canteen?.is_open ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200">
+                          Closed ({item.was_available_before_close ? 'Will Reopen Active' : 'Will Stay Off'})
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleToggleItemAvailability(item)}
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition-colors cursor-pointer ${
+                            item.is_available
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                              : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+                          }`}
+                          title="Click to toggle availability"
+                        >
+                          {item.is_available ? 'Available' : 'Out of Stock'}
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">{item.price} BDT • ~{item.est_prep_time_mins} mins prep</p>
                   </div>
                 </div>
 
@@ -216,7 +337,8 @@ export const LocalAdminDashboard = () => {
                         description: item.description || '',
                         price: item.price,
                         est_prep_time_mins: item.est_prep_time_mins || 10,
-                        image_url: item.image_url || ''
+                        image_url: item.image_url || '',
+                        is_available: canteen?.is_open ? Boolean(item.is_available) : Boolean(item.was_available_before_close)
                       });
                       setShowItemModal(true);
                     }}
@@ -468,6 +590,19 @@ export const LocalAdminDashboard = () => {
                   onChange={(e) => setItemForm({ ...itemForm, image_url: e.target.value })}
                   className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500"
                 />
+              </div>
+
+              <div className="flex items-center gap-2 pt-1 pb-1">
+                <input
+                  type="checkbox"
+                  id="dish_availability"
+                  checked={itemForm.is_available}
+                  onChange={(e) => setItemForm({ ...itemForm, is_available: e.target.checked })}
+                  className="rounded text-orange-600 focus:ring-orange-500 w-4 h-4 cursor-pointer"
+                />
+                <label htmlFor="dish_availability" className="text-xs font-bold text-gray-700 cursor-pointer">
+                  Available for ordering {!canteen?.is_open ? '(Preserved: will take effect upon reopening)' : ''}
+                </label>
               </div>
 
               <div className="flex justify-end gap-2 pt-3">

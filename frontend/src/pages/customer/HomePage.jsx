@@ -58,11 +58,12 @@ export const HomePage = ({ onOpenCart }) => {
         console.warn('/api/menu returned error, falling back to per-canteen fetch:', menuErr?.message);
       }
 
-      // If batch menu was unavailable or empty, fall back to per-canteen menu endpoints
+      // If batch menu was unavailable or empty, fall back to per-canteen menu endpoints (open canteens only)
       if (loadedItems.length === 0 && fetchedCanteens.length > 0) {
-        const menuPromises = fetchedCanteens.map(async (c) => {
+        const openCanteens = fetchedCanteens.filter((c) => Boolean(c.is_open));
+        const menuPromises = openCanteens.map(async (c) => {
           try {
-            const res = await api.get(`/canteens/${c.id}/menu`);
+            const res = await api.get(`/canteens/${c.id}/menu?available_only=true`);
             const itemsList = res.data?.data?.items || [];
             return itemsList.map((i) => ({
               ...i,
@@ -189,6 +190,7 @@ export const HomePage = ({ onOpenCart }) => {
           {canteens.map((canteen) => {
             const count = items.filter((i) => i.canteen_id === canteen.id).length;
             const isSelected = selectedCanteenId === canteen.id;
+            const isOpen = canteen.is_open !== false;
             return (
               <button
                 key={canteen.id}
@@ -196,11 +198,18 @@ export const HomePage = ({ onOpenCart }) => {
                 className={`px-3.5 py-1.5 rounded-full text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
                   isSelected
                     ? 'bg-orange-500 text-white shadow-xs'
-                    : 'bg-white border border-gray-200 text-gray-700 hover:bg-orange-50 hover:border-orange-200'
+                    : isOpen
+                    ? 'bg-white border border-gray-200 text-gray-700 hover:bg-orange-50 hover:border-orange-200'
+                    : 'bg-gray-100 border border-gray-200 text-gray-500 hover:bg-gray-200'
                 }`}
               >
                 <Store className="w-3.5 h-3.5" />
                 <span>{canteen.name}</span>
+                {!isOpen && (
+                  <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-rose-100 text-rose-700 font-extrabold uppercase">
+                    Closed
+                  </span>
+                )}
                 <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isSelected ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
                   {count}
                 </span>
@@ -208,6 +217,16 @@ export const HomePage = ({ onOpenCart }) => {
             );
           })}
         </div>
+
+        {/* Closed Canteen Info Banner if Selected */}
+        {selectedCanteenId && canteens.find((c) => c.id === selectedCanteenId && !c.is_open) && (
+          <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl p-3.5 flex items-center gap-3 text-xs font-bold shadow-2xs">
+            <Store className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>
+              This canteen kitchen is currently closed. All dishes have been temporarily turned off and will automatically reappear when the kitchen reopens.
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Content Area */}

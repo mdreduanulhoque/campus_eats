@@ -3,11 +3,12 @@ const { pool } = require('../config/db');
 // GET /api/menu (Public - all items with canteen tag info)
 const getAllMenuItems = async (req, res) => {
   try {
-    const { available_only, canteen_id, search } = req.query;
+    const { available_only, canteen_id, search, include_closed } = req.query;
     let query = `
       SELECT m.id, m.canteen_id, m.name, m.description, m.price, m.image_url,
              m.est_prep_time_mins, m.is_available, m.created_at,
              c.name AS canteen_name, c.location AS canteen_location,
+             c.is_open AS canteen_is_open,
              COALESCE(ROUND(AVG(r.rating), 1), 0) AS avg_rating,
              COUNT(r.id) AS review_count
       FROM menu_items m
@@ -22,7 +23,10 @@ const getAllMenuItems = async (req, res) => {
       params.push(parseInt(canteen_id, 10));
     }
 
-    if (available_only === 'true' || available_only === '1') {
+    // Default student order feed: only show items from open canteens that are available
+    if (include_closed !== 'true' && include_closed !== '1') {
+      query += ' AND c.is_open = TRUE AND m.is_available = TRUE';
+    } else if (available_only === 'true' || available_only === '1') {
       query += ' AND m.is_available = TRUE';
     }
 
@@ -32,13 +36,15 @@ const getAllMenuItems = async (req, res) => {
       params.push(term, term, term);
     }
 
-    query += ' GROUP BY m.id, c.name, c.location ORDER BY c.name ASC, m.name ASC';
+    query += ' GROUP BY m.id, c.name, c.location, c.is_open ORDER BY c.name ASC, m.name ASC';
 
     const [items] = await pool.query(query, params);
 
     items.forEach((item) => {
       item.avg_rating = parseFloat(item.avg_rating || 0);
       item.review_count = parseInt(item.review_count || 0, 10);
+      item.canteen_is_open = Boolean(item.canteen_is_open);
+      item.is_available = Boolean(item.is_available);
     });
 
     res.status(200).json({
@@ -67,26 +73,30 @@ const getMenuByCanteen = async (req, res) => {
     const { available_only } = req.query;
     let query = `
       SELECT m.id, m.canteen_id, m.name, m.description, m.price, m.image_url,
-             m.est_prep_time_mins, m.is_available, m.created_at,
+             m.est_prep_time_mins, m.is_available, m.was_available_before_close, m.created_at,
+             c.name AS canteen_name, c.is_open AS canteen_is_open,
              COALESCE(ROUND(AVG(r.rating), 1), 0) AS avg_rating,
              COUNT(r.id) AS review_count
       FROM menu_items m
+      JOIN canteens c ON m.canteen_id = c.id
       LEFT JOIN reviews r ON m.id = r.menu_item_id
       WHERE m.canteen_id = ?
     `;
     const params = [canteenId];
 
     if (available_only === 'true' || available_only === '1') {
-      query += ' AND m.is_available = TRUE';
+      query += ' AND m.is_available = TRUE AND c.is_open = TRUE';
     }
 
-    query += ' GROUP BY m.id ORDER BY m.name ASC';
+    query += ' GROUP BY m.id, c.name, c.is_open ORDER BY m.name ASC';
 
     const [items] = await pool.query(query, params);
 
     items.forEach((item) => {
       item.avg_rating = parseFloat(item.avg_rating || 0);
       item.review_count = parseInt(item.review_count || 0, 10);
+      item.canteen_is_open = Boolean(item.canteen_is_open);
+      item.is_available = Boolean(item.is_available);
     });
 
     res.status(200).json({
@@ -116,13 +126,14 @@ const getMenuItemById = async (req, res) => {
       `SELECT m.id, m.canteen_id, m.name, m.description, m.price, m.image_url,
               m.est_prep_time_mins, m.is_available, m.created_at,
               c.name AS canteen_name, c.location AS canteen_location,
+              c.is_open AS canteen_is_open,
               COALESCE(ROUND(AVG(r.rating), 1), 0) AS avg_rating,
               COUNT(r.id) AS review_count
        FROM menu_items m
        JOIN canteens c ON m.canteen_id = c.id
        LEFT JOIN reviews r ON m.id = r.menu_item_id
        WHERE m.id = ?
-       GROUP BY m.id, c.name, c.location`,
+       GROUP BY m.id, c.name, c.location, c.is_open`,
       [itemId]
     );
 
@@ -133,6 +144,8 @@ const getMenuItemById = async (req, res) => {
     const item = rows[0];
     item.avg_rating = parseFloat(item.avg_rating || 0);
     item.review_count = parseInt(item.review_count || 0, 10);
+    item.canteen_is_open = Boolean(item.canteen_is_open);
+    item.is_available = Boolean(item.is_available);
 
     res.status(200).json({
       status: 'success',
@@ -248,11 +261,26 @@ const updateMenuItem = async (req, res) => {
       return res.status(400).json({ status: 'error', message: 'Price must be a positive number.' });
     }
 
+    // Check if parent canteen is currently open or closed
+    const [canteenRows] = await pool.query('SELECT is_open FROM canteens WHERE id = ?', [item.canteen_id]);
+    const canteenIsOpen = canteenRows.length > 0 ? Boolean(canteenRows[0].is_open) : true;
+
+    let finalIsAvailable = updatedAvail;
+    let finalWasAvailable = item.was_available_before_close;
+
+    if (!canteenIsOpen) {
+      // Canteen is closed: item must stay not available in feed, but store intended state
+      finalIsAvailable = false;
+      finalWasAvailable = updatedAvail;
+    } else {
+      finalWasAvailable = null;
+    }
+
     await pool.query(
       `UPDATE menu_items 
-       SET name = ?, description = ?, price = ?, image_url = ?, est_prep_time_mins = ?, is_available = ?
+       SET name = ?, description = ?, price = ?, image_url = ?, est_prep_time_mins = ?, is_available = ?, was_available_before_close = ?
        WHERE id = ?`,
-      [updatedName, updatedDesc, updatedPrice, updatedImg, updatedPrep, updatedAvail, itemId]
+      [updatedName, updatedDesc, updatedPrice, updatedImg, updatedPrep, finalIsAvailable, finalWasAvailable, itemId]
     );
 
     res.status(200).json({
@@ -267,7 +295,8 @@ const updateMenuItem = async (req, res) => {
           price: updatedPrice,
           image_url: updatedImg,
           est_prep_time_mins: updatedPrep,
-          is_available: updatedAvail
+          is_available: finalIsAvailable,
+          was_available_before_close: finalWasAvailable
         }
       }
     });

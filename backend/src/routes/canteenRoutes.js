@@ -6,7 +6,8 @@ const {
   updateCanteen,
   assignLocalAdmin,
   getCanteenStaff,
-  createCanteenStaff
+  createCanteenStaff,
+  toggleCanteenStatus
 } = require('../controllers/canteenController');
 const { getMenuByCanteen } = require('../controllers/menuController');
 const { verifyToken } = require('../middleware/authMiddleware');
@@ -25,6 +26,7 @@ router.post('/:id/local-admin', verifyToken, requireRoles('super_admin'), assign
 
 // Super Admin & Local Admin of that canteen routes
 router.put('/:id', verifyToken, requireRoles('super_admin', 'local_admin'), requireCanteenAccess('params'), updateCanteen);
+router.patch('/:id/status', verifyToken, requireRoles('super_admin', 'local_admin'), requireCanteenAccess('params'), toggleCanteenStatus);
 router.get('/:id/staff', verifyToken, requireRoles('super_admin', 'local_admin'), requireCanteenAccess('params'), getCanteenStaff);
 router.post('/:id/staff', verifyToken, requireRoles('super_admin', 'local_admin'), requireCanteenAccess('params'), createCanteenStaff);
 

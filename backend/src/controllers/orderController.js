@@ -58,16 +58,51 @@ const createOrder = async (req, res) => {
       });
     }
 
-    // Verify canteen exists
-    const [canteenRows] = await connection.query('SELECT id, name FROM canteens WHERE id = ?', [canteen_id]);
+    // Pickup time must be between 7:00 AM (07:00) and 7:00 PM (19:00)
+    let hours, minutes;
+    try {
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: process.env.TZ || 'Asia/Dhaka',
+        hour: 'numeric',
+        minute: 'numeric',
+        hour12: false
+      });
+      const parts = formatter.formatToParts(pickupDate);
+      hours = parseInt(parts.find(p => p.type === 'hour')?.value, 10);
+      minutes = parseInt(parts.find(p => p.type === 'minute')?.value, 10);
+    } catch (e) {
+      hours = pickupDate.getHours();
+      minutes = pickupDate.getMinutes();
+    }
+
+    const totalMinutes = hours * 60 + minutes;
+    // 07:00 AM is 420 mins; 07:00 PM (19:00) is 1140 mins
+    if (totalMinutes < 420 || totalMinutes > 1140) {
+      return res.status(400).json({
+        status: 'error',
+        code: 'INVALID_PICKUP_TIME',
+        message: 'Pickup time must be between 7:00 AM and 7:00 PM.'
+      });
+    }
+
+    // Verify canteen exists and is currently open
+    const [canteenRows] = await connection.query('SELECT id, name, is_open FROM canteens WHERE id = ?', [canteen_id]);
     if (canteenRows.length === 0) {
       return res.status(404).json({ status: 'error', message: 'Canteen not found.' });
+    }
+
+    if (!canteenRows[0].is_open) {
+      return res.status(400).json({
+        status: 'error',
+        code: 'CANTEEN_CLOSED',
+        message: `Canteen '${canteenRows[0].name}' kitchen is currently closed and not accepting orders.`
+      });
     }
 
     // 3. Verify and calculate order items
     const itemIds = items.map(i => i.menu_item_id);
     const [dbItems] = await connection.query(
-      `SELECT id, canteen_id, name, price, is_available FROM menu_items WHERE id IN (?)`,
+      `SELECT id, canteen_id, name, price, est_prep_time_mins, is_available FROM menu_items WHERE id IN (?)`,
       [itemIds]
     );
 
@@ -75,6 +110,7 @@ const createOrder = async (req, res) => {
     dbItems.forEach(item => { dbItemsMap[item.id] = item; });
 
     let subtotal = 0;
+    let totalPrepMinutes = 0;
     const validatedOrderItems = [];
 
     for (const item of items) {
@@ -108,6 +144,9 @@ const createOrder = async (req, res) => {
         });
       }
 
+      const itemPrep = parseInt(dbItem.est_prep_time_mins, 10) || 10;
+      totalPrepMinutes += itemPrep * qty;
+
       const itemTotal = parseFloat(dbItem.price) * qty;
       subtotal += itemTotal;
 
@@ -116,6 +155,40 @@ const createOrder = async (req, res) => {
         name: dbItem.name,
         quantity: qty,
         price_at_time: parseFloat(dbItem.price)
+      });
+    }
+
+    // Dynamic Pickup Time Window Validation:
+    // 1. Must be after (now + prep_time)
+    // 2. Must be within 2-hour window from now (before now + 2h)
+    const cappedPrepMinutes = Math.min(totalPrepMinutes, 90);
+    const orderNow = Date.now();
+    // 30-second leeway for client/server network transit
+    const minPickupTimestamp = orderNow + cappedPrepMinutes * 60 * 1000 - 30000;
+    const maxPickupTimestamp = orderNow + 2 * 60 * 60 * 1000 + 30000;
+
+    const timeFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: process.env.TZ || 'Asia/Dhaka',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: true
+    });
+
+    if (pickupDate.getTime() < minPickupTimestamp) {
+      const earliestStr = timeFormatter.format(new Date(orderNow + cappedPrepMinutes * 60 * 1000));
+      return res.status(400).json({
+        status: 'error',
+        code: 'PICKUP_TOO_EARLY',
+        message: `Pickup time must be after ${earliestStr} (at least ${cappedPrepMinutes} mins from now to allow kitchen preparation).`
+      });
+    }
+
+    if (pickupDate.getTime() > maxPickupTimestamp) {
+      const latestStr = timeFormatter.format(new Date(orderNow + 2 * 60 * 60 * 1000));
+      return res.status(400).json({
+        status: 'error',
+        code: 'PICKUP_WINDOW_EXCEEDED',
+        message: `Pickup time must be within a 2-hour window from now (before ${latestStr}).`
       });
     }
 
