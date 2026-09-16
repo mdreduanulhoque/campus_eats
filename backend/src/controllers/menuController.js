@@ -3,7 +3,17 @@ const { pool } = require('../config/db');
 // GET /api/menu (Public - all items with canteen tag info)
 const getAllMenuItems = async (req, res) => {
   try {
-    const { available_only, canteen_id, search, include_closed } = req.query;
+    const {
+      available_only,
+      canteen_id,
+      search,
+      min_price,
+      max_price,
+      min_rating,
+      sort_by,
+      include_closed
+    } = req.query;
+
     let query = `
       SELECT m.id, m.canteen_id, m.name, m.description, m.price, m.image_url,
              m.est_prep_time_mins, m.is_available, m.created_at,
@@ -30,13 +40,44 @@ const getAllMenuItems = async (req, res) => {
       query += ' AND m.is_available = TRUE';
     }
 
+    // Search matches titles (names) and descriptions
     if (search && search.trim()) {
-      query += ' AND (m.name LIKE ? OR m.description LIKE ? OR c.name LIKE ?)';
+      query += ' AND (m.name LIKE ? OR m.description LIKE ?)';
       const term = `%${search.trim()}%`;
-      params.push(term, term, term);
+      params.push(term, term);
     }
 
-    query += ' GROUP BY m.id, c.name, c.location, c.is_open ORDER BY c.name ASC, m.name ASC';
+    if (min_price && !isNaN(parseFloat(min_price))) {
+      query += ' AND m.price >= ?';
+      params.push(parseFloat(min_price));
+    }
+
+    if (max_price && !isNaN(parseFloat(max_price))) {
+      query += ' AND m.price <= ?';
+      params.push(parseFloat(max_price));
+    }
+
+    query += ' GROUP BY m.id, c.name, c.location, c.is_open';
+
+    if (min_rating && !isNaN(parseFloat(min_rating))) {
+      query += ' HAVING avg_rating >= ?';
+      params.push(parseFloat(min_rating));
+    }
+
+    // Dynamic sorting: default to ascending order by price and rating when searching
+    const effectiveSort = sort_by || (search && search.trim() ? 'price_rating_asc' : 'default');
+
+    if (effectiveSort === 'price_rating_asc' || effectiveSort === 'price_asc') {
+      query += ' ORDER BY m.price ASC, avg_rating ASC, m.name ASC';
+    } else if (effectiveSort === 'price_desc') {
+      query += ' ORDER BY m.price DESC, avg_rating DESC, m.name ASC';
+    } else if (effectiveSort === 'rating_desc') {
+      query += ' ORDER BY avg_rating DESC, m.price ASC, m.name ASC';
+    } else if (effectiveSort === 'rating_asc') {
+      query += ' ORDER BY avg_rating ASC, m.price ASC, m.name ASC';
+    } else {
+      query += ' ORDER BY c.name ASC, m.name ASC';
+    }
 
     const [items] = await pool.query(query, params);
 
@@ -70,7 +111,7 @@ const getMenuByCanteen = async (req, res) => {
       return res.status(400).json({ status: 'error', message: 'Invalid canteen ID.' });
     }
 
-    const { available_only } = req.query;
+    const { available_only, search, min_price, max_price, min_rating, sort_by } = req.query;
     let query = `
       SELECT m.id, m.canteen_id, m.name, m.description, m.price, m.image_url,
              m.est_prep_time_mins, m.is_available, m.was_available_before_close, m.created_at,
@@ -88,7 +129,42 @@ const getMenuByCanteen = async (req, res) => {
       query += ' AND m.is_available = TRUE AND c.is_open = TRUE';
     }
 
-    query += ' GROUP BY m.id, c.name, c.is_open ORDER BY m.name ASC';
+    if (search && search.trim()) {
+      query += ' AND (m.name LIKE ? OR m.description LIKE ?)';
+      const term = `%${search.trim()}%`;
+      params.push(term, term);
+    }
+
+    if (min_price && !isNaN(parseFloat(min_price))) {
+      query += ' AND m.price >= ?';
+      params.push(parseFloat(min_price));
+    }
+
+    if (max_price && !isNaN(parseFloat(max_price))) {
+      query += ' AND m.price <= ?';
+      params.push(parseFloat(max_price));
+    }
+
+    query += ' GROUP BY m.id, c.name, c.is_open';
+
+    if (min_rating && !isNaN(parseFloat(min_rating))) {
+      query += ' HAVING avg_rating >= ?';
+      params.push(parseFloat(min_rating));
+    }
+
+    const effectiveSort = sort_by || (search && search.trim() ? 'price_rating_asc' : 'default');
+
+    if (effectiveSort === 'price_rating_asc' || effectiveSort === 'price_asc') {
+      query += ' ORDER BY m.price ASC, avg_rating ASC, m.name ASC';
+    } else if (effectiveSort === 'price_desc') {
+      query += ' ORDER BY m.price DESC, avg_rating DESC, m.name ASC';
+    } else if (effectiveSort === 'rating_desc') {
+      query += ' ORDER BY avg_rating DESC, m.price ASC, m.name ASC';
+    } else if (effectiveSort === 'rating_asc') {
+      query += ' ORDER BY avg_rating ASC, m.price ASC, m.name ASC';
+    } else {
+      query += ' ORDER BY m.name ASC';
+    }
 
     const [items] = await pool.query(query, params);
 

@@ -14,7 +14,10 @@ import {
   Search, 
   ArrowLeftRight, 
   Check, 
-  Star 
+  Star,
+  SlidersHorizontal,
+  ArrowUpDown,
+  X
 } from 'lucide-react';
 import { ItemReviewsModal } from '../../components/customer/ItemReviewsModal';
 
@@ -27,6 +30,11 @@ export const CanteenMenu = ({ onOpenCart }) => {
   const [canteen, setCanteen] = useState(null);
   const [menuItems, setMenuItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState('default'); // 'price_rating_asc' | 'price_asc' | 'price_desc' | 'rating_desc' | 'rating_asc' | 'default'
+  const [maxPrice, setMaxPrice] = useState('');
+  const [minRating, setMinRating] = useState('');
+  const [onlyWithReviews, setOnlyWithReviews] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedItemForReviews, setSelectedItemForReviews] = useState(null);
 
@@ -48,10 +56,58 @@ export const CanteenMenu = ({ onOpenCart }) => {
     fetchData();
   }, [id]);
 
-  const filteredItems = menuItems.filter((item) =>
-    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (item.description && item.description.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // When a search is entered, default sort automatically switches to 'price_rating_asc'
+  const activeSort = sortBy !== 'default' ? sortBy : (searchTerm.trim() ? 'price_rating_asc' : 'default');
+
+  const filteredItems = menuItems
+    .filter((item) => {
+      // Matches titles (names) and descriptions (case-insensitive)
+      const term = searchTerm.trim().toLowerCase();
+      const matchesSearch = !term || (
+        (item.name && item.name.toLowerCase().includes(term)) ||
+        (item.description && item.description.toLowerCase().includes(term))
+      );
+
+      // Price filter
+      const price = parseFloat(item.price);
+      const matchesPrice = !maxPrice || isNaN(parseFloat(maxPrice)) || price <= parseFloat(maxPrice);
+
+      // Review / Rating filter
+      const rating = parseFloat(item.avg_rating || 0);
+      const reviews = parseInt(item.review_count || 0, 10);
+      const matchesRating = !minRating || isNaN(parseFloat(minRating)) || rating >= parseFloat(minRating);
+      const matchesOnlyReviews = !onlyWithReviews || reviews > 0;
+
+      return matchesSearch && matchesPrice && matchesRating && matchesOnlyReviews;
+    })
+    .sort((a, b) => {
+      const priceA = parseFloat(a.price) || 0;
+      const priceB = parseFloat(b.price) || 0;
+      const ratingA = parseFloat(a.avg_rating) || 0;
+      const ratingB = parseFloat(b.avg_rating) || 0;
+
+      if (activeSort === 'price_rating_asc') {
+        // Sort in ascending order based on price and rating
+        if (priceA !== priceB) return priceA - priceB;
+        return ratingA - ratingB;
+      }
+      if (activeSort === 'price_asc') {
+        return priceA - priceB;
+      }
+      if (activeSort === 'price_desc') {
+        return priceB - priceA;
+      }
+      if (activeSort === 'rating_desc') {
+        if (ratingB !== ratingA) return ratingB - ratingA;
+        return priceA - priceB;
+      }
+      if (activeSort === 'rating_asc') {
+        if (ratingA !== ratingB) return ratingA - ratingB;
+        return priceA - priceB;
+      }
+      // Default: Dish name
+      return (a.name || '').localeCompare(b.name || '');
+    });
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 sm:pb-12 space-y-6">
@@ -86,16 +142,168 @@ export const CanteenMenu = ({ onOpenCart }) => {
             </p>
           </div>
 
-          <div className="relative max-w-xs w-full">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search dishes..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500"
-            />
+          <div className="flex items-center gap-2 max-w-sm w-full">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search dishes..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-8 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`px-3 py-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
+                showFilters || maxPrice || minRating || onlyWithReviews || (sortBy !== 'default' && sortBy !== 'price_rating_asc')
+                  ? 'bg-orange-500 text-white border-orange-500 shadow-xs'
+                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+              }`}
+              title="Filters and sorting"
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              <span className="hidden sm:inline">Filters</span>
+              {(maxPrice || minRating || onlyWithReviews) && (
+                <span className="w-2 h-2 rounded-full bg-white"></span>
+              )}
+            </button>
           </div>
+        </div>
+      )}
+
+      {/* Filter & Sort Controls Panel */}
+      {(showFilters || searchTerm || maxPrice || minRating || onlyWithReviews) && (
+        <div className="bg-white p-3.5 sm:p-4 rounded-3xl border border-gray-100 shadow-xs space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+            {/* Sort By Dropdown */}
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-gray-700 flex items-center gap-1">
+                <ArrowUpDown className="w-3.5 h-3.5 text-gray-400" />
+                Sort:
+              </span>
+              <select
+                value={activeSort}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500 cursor-pointer text-gray-800"
+              >
+                <option value="price_rating_asc">Price & Rating: Low to High (Default)</option>
+                <option value="price_asc">Price: Lowest to Highest</option>
+                <option value="price_desc">Price: Highest to Lowest</option>
+                <option value="rating_desc">Rating: Highest First</option>
+                <option value="rating_asc">Rating: Lowest First</option>
+                <option value="default">Default (Dish Name)</option>
+              </select>
+            </div>
+
+            {/* Price Filter Options */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-bold text-gray-700">Max Price:</span>
+              <div className="flex items-center gap-1">
+                {[
+                  { label: 'Any', val: '' },
+                  { label: '≤ 35', val: '35' },
+                  { label: '≤ 60', val: '60' },
+                  { label: '≤ 100', val: '100' }
+                ].map((p) => (
+                  <button
+                    key={p.label}
+                    onClick={() => setMaxPrice(maxPrice === p.val ? '' : p.val)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                      maxPrice === p.val
+                        ? 'bg-orange-500 text-white border-orange-500 shadow-2xs'
+                        : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    {p.label} {p.val && <span className="text-[10px]">BDT</span>}
+                  </button>
+                ))}
+                <div className="relative w-20 ml-1">
+                  <input
+                    type="number"
+                    placeholder="Custom"
+                    value={maxPrice}
+                    onChange={(e) => setMaxPrice(e.target.value)}
+                    className="w-full px-2 py-1 bg-gray-50 border border-gray-200 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Review / Rating Filter Options */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-bold text-gray-700 flex items-center gap-1">
+                <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                Review:
+              </span>
+              <div className="flex items-center gap-1">
+                {[
+                  { label: 'All', val: '' },
+                  { label: '4★+', val: '4' },
+                  { label: '3★+', val: '3' }
+                ].map((r) => (
+                  <button
+                    key={r.label}
+                    onClick={() => setMinRating(minRating === r.val ? '' : r.val)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                      minRating === r.val
+                        ? 'bg-amber-500 text-white border-amber-500 shadow-2xs'
+                        : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setOnlyWithReviews(!onlyWithReviews)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors cursor-pointer ml-1 ${
+                    onlyWithReviews
+                      ? 'bg-amber-100 text-amber-900 border-amber-300 font-black shadow-2xs'
+                      : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  Reviewed
+                </button>
+              </div>
+            </div>
+
+            {/* Reset All Filters button */}
+            {(searchTerm || maxPrice || minRating || onlyWithReviews || (sortBy !== 'default' && sortBy !== 'price_rating_asc')) && (
+              <button
+                onClick={() => {
+                  setSearchTerm('');
+                  setMaxPrice('');
+                  setMinRating('');
+                  setOnlyWithReviews(false);
+                  setSortBy('default');
+                }}
+                className="text-xs font-bold text-red-600 hover:underline cursor-pointer ml-auto"
+              >
+                Reset Filters
+              </button>
+            )}
+          </div>
+
+          {/* Live Search and Sort status notice */}
+          {searchTerm.trim() && (
+            <div className="flex items-center gap-2 text-[11px] text-gray-600 pt-2 border-t border-gray-100 flex-wrap">
+              <span>
+                Showing results matching <strong>"{searchTerm}"</strong> in titles & descriptions
+              </span>
+              <span className="font-bold text-orange-700 bg-orange-50 px-2.5 py-0.5 rounded-full border border-orange-200 text-[10px]">
+                Sorted: {activeSort === 'price_rating_asc' ? 'Price (Asc) & Rating (Asc)' : activeSort}
+              </span>
+            </div>
+          )}
         </div>
       )}
 
