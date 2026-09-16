@@ -10,8 +10,10 @@ import {
   Utensils, 
   Award, 
   ShoppingBag,
-  RotateCcw
+  RotateCcw,
+  Star
 } from 'lucide-react';
+import { ReviewModal } from '../../components/customer/ReviewModal';
 
 const STATUS_STEPS = [
   { key: 'pending', label: 'Order Placed' },
@@ -25,8 +27,25 @@ export const OrdersHistory = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [cancellingId, setCancellingId] = useState(null);
+  const [selectedReviewItem, setSelectedReviewItem] = useState(null);
   const { liveEvent } = useSocket();
   const { reloadProfile } = useAuth();
+
+  const handleReviewSubmitted = ({ menu_item_id, rating, comment }) => {
+    setOrders((prevOrders) =>
+      prevOrders.map((order) => {
+        if (!order.items) return order;
+        return {
+          ...order,
+          items: order.items.map((item) =>
+            item.menu_item_id === menu_item_id
+              ? { ...item, has_reviewed: true, user_rating: rating, user_comment: comment }
+              : item
+          )
+        };
+      })
+    );
+  };
 
   const fetchOrders = async () => {
     try {
@@ -230,15 +249,20 @@ export const OrdersHistory = () => {
 
       {/* Past Orders Section */}
       <div className="space-y-4 pt-4 border-t border-gray-200">
-        <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
-          <RotateCcw className="w-4 h-4 text-gray-500" />
-          Past Orders ({pastOrders.length})
-        </h2>
+        <div>
+          <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
+            <RotateCcw className="w-4 h-4 text-gray-500" />
+            Past Orders ({pastOrders.length})
+          </h2>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Review your delivered dishes separately to help other students choose the best meals.
+          </p>
+        </div>
 
         {pastOrders.length === 0 ? (
           <p className="text-xs text-gray-400">No past orders history.</p>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {pastOrders.map((order) => {
               const isCompleted = order.status === 'picked_up';
               const isFailed = order.status === 'failed_by_canteen';
@@ -248,43 +272,116 @@ export const OrdersHistory = () => {
               return (
                 <div
                   key={order.id}
-                  className="bg-white rounded-2xl p-4 border border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
+                  className="bg-white rounded-3xl p-5 border border-gray-100 shadow-2xs space-y-4"
                 >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-gray-400">#{order.id}</span>
-                      <span className="font-bold text-sm text-gray-900">{order.canteen_name}</span>
-                      <span
-                        className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                          isCompleted
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : isFailed
-                            ? 'bg-amber-100 text-amber-800'
-                            : isNoShow
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-gray-100 text-gray-700'
-                        }`}
-                      >
-                        {order.status.replace(/_/g, ' ').toUpperCase()}
-                      </span>
+                  {/* Order Header Summary */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-gray-400">#{order.id}</span>
+                        <span className="font-extrabold text-sm text-gray-900">{order.canteen_name}</span>
+                        <span
+                          className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
+                            isCompleted
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : isFailed
+                              ? 'bg-amber-100 text-amber-800'
+                              : isNoShow
+                              ? 'bg-red-100 text-red-800'
+                              : 'bg-gray-100 text-gray-700'
+                          }`}
+                        >
+                          {order.status.replace(/_/g, ' ').toUpperCase()}
+                        </span>
+                      </div>
+
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        {new Date(order.created_at).toLocaleDateString()} at{' '}
+                        {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
                     </div>
 
-                    <p className="text-[11px] text-gray-400 mt-1">
-                      {new Date(order.created_at).toLocaleDateString()} at{' '}
-                      {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </p>
+                    <div className="flex items-center gap-4 text-left sm:text-right">
+                      {order.points_earned > 0 && (
+                        <div className="flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg">
+                          <Award className="w-3.5 h-3.5 text-amber-600" />
+                          <span>+{order.points_earned} pts</span>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-xs text-gray-400 font-medium">Total Paid</span>
+                        <p className="text-sm font-black text-gray-900">{order.total_amount} BDT</p>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-4 text-right">
-                    {order.points_earned > 0 && (
-                      <div className="flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg">
-                        <Award className="w-3.5 h-3.5 text-amber-600" />
-                        <span>+{order.points_earned} pts</span>
-                      </div>
-                    )}
-                    <div>
-                      <span className="text-xs text-gray-400 font-medium">Total Paid</span>
-                      <p className="text-sm font-black text-gray-900">{order.total_amount} BDT</p>
+                  {/* Ordered Items List with Review Triggers */}
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                      Ordered Items ({order.items?.length || 0})
+                    </span>
+
+                    <div className="grid grid-cols-1 divide-y divide-gray-50">
+                      {order.items?.map((item) => (
+                        <div
+                          key={item.id}
+                          className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 overflow-hidden flex items-center justify-center shrink-0">
+                              {item.image_url ? (
+                                <img
+                                  src={item.image_url}
+                                  alt={item.name}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    e.target.style.display = 'none';
+                                  }}
+                                />
+                              ) : (
+                                <Utensils className="w-4 h-4" />
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-bold text-xs text-gray-900">
+                                {item.quantity}x {item.name}
+                              </p>
+                              <p className="text-[11px] text-gray-400">
+                                {(item.quantity * item.price_at_time).toFixed(2)} BDT ({item.price_at_time} BDT each)
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Review Action for Delivered Meals */}
+                          <div className="flex items-center sm:justify-end">
+                            {isCompleted ? (
+                              item.has_reviewed ? (
+                                <div className="inline-flex items-center gap-1 px-3 py-1 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-xs font-bold shadow-2xs">
+                                  <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                                  <span>{item.user_rating}.0 Reviewed</span>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() =>
+                                    setSelectedReviewItem({
+                                      ...item,
+                                      canteen_name: order.canteen_name
+                                    })
+                                  }
+                                  className="px-3.5 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-xl shadow-xs hover:shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                                >
+                                  <Star className="w-3.5 h-3.5 fill-white" />
+                                  <span>Write Review</span>
+                                </button>
+                              )
+                            ) : (
+                              <span className="text-[11px] text-gray-400 italic">
+                                Reviews available after pickup
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -293,6 +390,14 @@ export const OrdersHistory = () => {
           </div>
         )}
       </div>
+
+      {/* Review Submission Modal */}
+      <ReviewModal
+        isOpen={Boolean(selectedReviewItem)}
+        onClose={() => setSelectedReviewItem(null)}
+        item={selectedReviewItem}
+        onReviewSubmitted={handleReviewSubmitted}
+      />
     </div>
   );
 };

@@ -17,7 +17,8 @@ import {
   Sparkles, 
   TrendingDown, 
   Zap, 
-  ExternalLink 
+  ExternalLink,
+  Star
 } from 'lucide-react';
 
 export const ComparePage = () => {
@@ -265,6 +266,23 @@ export const ComparePage = () => {
                   </div>
 
                   <div className="flex items-center justify-between">
+                    <span className="text-gray-500 font-semibold">Student Rating</span>
+                    <span className="font-extrabold text-amber-900 flex items-center gap-1 text-sm">
+                      <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                      {item1.review_count > 0 ? (
+                        <>
+                          <span>{Number(item1.avg_rating).toFixed(1)} / 5</span>
+                          <span className="text-[11px] text-gray-400 font-normal">
+                            ({item1.review_count} revs)
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-gray-400 font-normal text-xs">No reviews yet</span>
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between">
                     <span className="text-gray-500 font-semibold">Availability</span>
                     <span className={`font-bold px-2.5 py-0.5 rounded text-xs ${
                       item1.is_available ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
@@ -390,6 +408,23 @@ export const ComparePage = () => {
                         <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded ml-1">
                           Faster
                         </span>
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-500 font-semibold">Student Rating</span>
+                    <span className="font-extrabold text-amber-900 flex items-center gap-1 text-sm">
+                      <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                      {item2.review_count > 0 ? (
+                        <>
+                          <span>{Number(item2.avg_rating).toFixed(1)} / 5</span>
+                          <span className="text-[11px] text-gray-400 font-normal">
+                            ({item2.review_count} revs)
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-gray-400 font-normal text-xs">No reviews yet</span>
                       )}
                     </span>
                   </div>

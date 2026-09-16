@@ -7,9 +7,12 @@ const getAllMenuItems = async (req, res) => {
     let query = `
       SELECT m.id, m.canteen_id, m.name, m.description, m.price, m.image_url,
              m.est_prep_time_mins, m.is_available, m.created_at,
-             c.name AS canteen_name, c.location AS canteen_location
+             c.name AS canteen_name, c.location AS canteen_location,
+             COALESCE(ROUND(AVG(r.rating), 1), 0) AS avg_rating,
+             COUNT(r.id) AS review_count
       FROM menu_items m
       JOIN canteens c ON m.canteen_id = c.id
+      LEFT JOIN reviews r ON m.id = r.menu_item_id
       WHERE 1=1
     `;
     const params = [];
@@ -29,9 +32,14 @@ const getAllMenuItems = async (req, res) => {
       params.push(term, term, term);
     }
 
-    query += ' ORDER BY c.name ASC, m.name ASC';
+    query += ' GROUP BY m.id, c.name, c.location ORDER BY c.name ASC, m.name ASC';
 
     const [items] = await pool.query(query, params);
+
+    items.forEach((item) => {
+      item.avg_rating = parseFloat(item.avg_rating || 0);
+      item.review_count = parseInt(item.review_count || 0, 10);
+    });
 
     res.status(200).json({
       status: 'success',
@@ -58,19 +66,28 @@ const getMenuByCanteen = async (req, res) => {
 
     const { available_only } = req.query;
     let query = `
-      SELECT id, canteen_id, name, description, price, image_url, est_prep_time_mins, is_available, created_at
-      FROM menu_items
-      WHERE canteen_id = ?
+      SELECT m.id, m.canteen_id, m.name, m.description, m.price, m.image_url,
+             m.est_prep_time_mins, m.is_available, m.created_at,
+             COALESCE(ROUND(AVG(r.rating), 1), 0) AS avg_rating,
+             COUNT(r.id) AS review_count
+      FROM menu_items m
+      LEFT JOIN reviews r ON m.id = r.menu_item_id
+      WHERE m.canteen_id = ?
     `;
     const params = [canteenId];
 
     if (available_only === 'true' || available_only === '1') {
-      query += ' AND is_available = TRUE';
+      query += ' AND m.is_available = TRUE';
     }
 
-    query += ' ORDER BY name ASC';
+    query += ' GROUP BY m.id ORDER BY m.name ASC';
 
     const [items] = await pool.query(query, params);
+
+    items.forEach((item) => {
+      item.avg_rating = parseFloat(item.avg_rating || 0);
+      item.review_count = parseInt(item.review_count || 0, 10);
+    });
 
     res.status(200).json({
       status: 'success',
@@ -98,10 +115,14 @@ const getMenuItemById = async (req, res) => {
     const [rows] = await pool.query(
       `SELECT m.id, m.canteen_id, m.name, m.description, m.price, m.image_url,
               m.est_prep_time_mins, m.is_available, m.created_at,
-              c.name AS canteen_name, c.location AS canteen_location
+              c.name AS canteen_name, c.location AS canteen_location,
+              COALESCE(ROUND(AVG(r.rating), 1), 0) AS avg_rating,
+              COUNT(r.id) AS review_count
        FROM menu_items m
        JOIN canteens c ON m.canteen_id = c.id
-       WHERE m.id = ?`,
+       LEFT JOIN reviews r ON m.id = r.menu_item_id
+       WHERE m.id = ?
+       GROUP BY m.id, c.name, c.location`,
       [itemId]
     );
 
@@ -109,10 +130,14 @@ const getMenuItemById = async (req, res) => {
       return res.status(404).json({ status: 'error', message: 'Menu item not found.' });
     }
 
+    const item = rows[0];
+    item.avg_rating = parseFloat(item.avg_rating || 0);
+    item.review_count = parseInt(item.review_count || 0, 10);
+
     res.status(200).json({
       status: 'success',
       data: {
-        item: rows[0]
+        item
       }
     });
   } catch (error) {
@@ -374,10 +399,14 @@ const compareMenuItems = async (req, res) => {
     const [rows] = await pool.query(
       `SELECT m.id, m.canteen_id, m.name, m.description, m.price, m.image_url,
               m.est_prep_time_mins, m.is_available, m.created_at,
-              c.name AS canteen_name, c.location AS canteen_location
+              c.name AS canteen_name, c.location AS canteen_location,
+              COALESCE(ROUND(AVG(r.rating), 1), 0) AS avg_rating,
+              COUNT(r.id) AS review_count
        FROM menu_items m
        JOIN canteens c ON m.canteen_id = c.id
-       WHERE m.id IN (?, ?)`,
+       LEFT JOIN reviews r ON m.id = r.menu_item_id
+       WHERE m.id IN (?, ?)
+       GROUP BY m.id, c.name, c.location`,
       [id1, id2]
     );
 
@@ -387,6 +416,11 @@ const compareMenuItems = async (req, res) => {
         message: 'One or both menu items could not be found for comparison.'
       });
     }
+
+    rows.forEach((r) => {
+      r.avg_rating = parseFloat(r.avg_rating || 0);
+      r.review_count = parseInt(r.review_count || 0, 10);
+    });
 
     const firstItem = rows.find((r) => r.id === id1);
     const secondItem = rows.find((r) => r.id === id2);
@@ -414,6 +448,16 @@ const compareMenuItems = async (req, res) => {
       fasterId = secondItem.id;
     }
 
+    const rating1 = firstItem.avg_rating;
+    const rating2 = secondItem.avg_rating;
+    const ratingDiff = Math.abs(rating1 - rating2);
+    let higherRatedId = null;
+    if (rating1 > rating2) {
+      higherRatedId = firstItem.id;
+    } else if (rating2 > rating1) {
+      higherRatedId = secondItem.id;
+    }
+
     const sameCanteen = firstItem.canteen_id === secondItem.canteen_id;
 
     res.status(200).json({
@@ -427,6 +471,8 @@ const compareMenuItems = async (req, res) => {
           cheaper_diff_percent: cheaperDiffPercent,
           prep_time_diff: prepTimeDiff,
           faster_item_id: fasterId,
+          rating_diff: ratingDiff,
+          higher_rated_item_id: higherRatedId,
           same_canteen: sameCanteen
         }
       }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { 
@@ -10,13 +11,23 @@ import {
   Check, 
   ShieldAlert, 
   Save,
-  CheckCircle2
+  CheckCircle2,
+  FileText,
+  Star,
+  ChevronRight,
+  Utensils,
+  ShoppingBag,
+  RotateCcw
 } from 'lucide-react';
+import { ReviewModal } from '../../components/customer/ReviewModal';
 
 export const Profile = () => {
   const { user, reloadProfile } = useAuth();
   const [budgetLimit, setBudgetLimit] = useState(user?.daily_budget_limit || 0);
   const [notifications, setNotifications] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [loadingOrders, setLoadingOrders] = useState(true);
+  const [selectedReviewItem, setSelectedReviewItem] = useState(null);
   const [savingBudget, setSavingBudget] = useState(false);
   const [budgetSuccess, setBudgetSuccess] = useState('');
   const [budgetError, setBudgetError] = useState('');
@@ -30,9 +41,38 @@ export const Profile = () => {
     }
   };
 
+  const fetchOrders = async () => {
+    if (user?.role !== 'user') return;
+    try {
+      const res = await api.get('/orders/my-orders');
+      setOrders(res.data?.data?.orders || []);
+    } catch (err) {
+      console.error('Failed to load profile orders:', err);
+    } finally {
+      setLoadingOrders(false);
+    }
+  };
+
   useEffect(() => {
     fetchNotifications();
+    fetchOrders();
   }, []);
+
+  const handleReviewSubmitted = ({ menu_item_id, rating, comment }) => {
+    setOrders((prevOrders) =>
+      prevOrders.map((order) => {
+        if (!order.items) return order;
+        return {
+          ...order,
+          items: order.items.map((item) =>
+            item.menu_item_id === menu_item_id
+              ? { ...item, has_reviewed: true, user_rating: rating, user_comment: comment }
+              : item
+          )
+        };
+      })
+    );
+  };
 
   const handleUpdateBudget = async (e) => {
     e.preventDefault();
@@ -131,6 +171,132 @@ export const Profile = () => {
         </div>
       </div>
 
+      {/* Previous Orders & Order Tracking Section */}
+      {user?.role === 'user' && (
+        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-100 shadow-xs space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-gray-900 font-extrabold text-base">
+              <FileText className="w-5 h-5 text-orange-500" />
+              <span>Previous Orders & Order Tracking</span>
+            </div>
+            <Link
+              to="/orders"
+              className="text-xs font-bold text-orange-600 hover:text-orange-700 flex items-center gap-1 group"
+            >
+              <span>View All Orders ({orders.length})</span>
+              <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+            </Link>
+          </div>
+          <p className="text-xs text-gray-500">
+            Track your order history and rate delivered meals to share your feedback.
+          </p>
+
+          {loadingOrders ? (
+            <div className="h-28 bg-gray-100 animate-pulse rounded-2xl" />
+          ) : orders.length === 0 ? (
+            <div className="p-6 text-center bg-gray-50 rounded-2xl border border-gray-100 space-y-2">
+              <ShoppingBag className="w-8 h-8 text-gray-300 mx-auto" />
+              <p className="text-xs font-bold text-gray-600">No previous orders found</p>
+              <Link
+                to="/"
+                className="inline-block text-xs font-bold text-orange-600 hover:underline"
+              >
+                Explore Campus Menu
+              </Link>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {orders.slice(0, 3).map((order) => {
+                const isDelivered = order.status === 'picked_up';
+
+                return (
+                  <div
+                    key={order.id}
+                    className="p-4 rounded-2xl border border-gray-100 bg-gray-50/50 space-y-3"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-gray-400">#{order.id}</span>
+                        <span className="font-extrabold text-xs text-gray-900">{order.canteen_name}</span>
+                        <span
+                          className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
+                            isDelivered
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : order.status === 'pending' || order.status === 'accepted' || order.status === 'preparing' || order.status === 'ready'
+                              ? 'bg-orange-100 text-orange-800'
+                              : 'bg-gray-200 text-gray-700'
+                          }`}
+                        >
+                          {order.status.replace(/_/g, ' ').toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs">
+                        <span className="text-gray-400 text-[11px]">
+                          {new Date(order.created_at).toLocaleDateString()}
+                        </span>
+                        <span className="font-black text-gray-900">{order.total_amount} BDT</span>
+                      </div>
+                    </div>
+
+                    {/* Order items and review buttons */}
+                    <div className="space-y-2 pt-1 border-t border-gray-200/60">
+                      {order.items?.map((item) => (
+                        <div key={item.id} className="flex items-center justify-between text-xs gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Utensils className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                            <span className="font-semibold text-gray-800 truncate">
+                              {item.quantity}x {item.name}
+                            </span>
+                          </div>
+
+                          <div>
+                            {isDelivered ? (
+                              item.has_reviewed ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
+                                  <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                                  <span>{item.user_rating}.0 Reviewed</span>
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() =>
+                                    setSelectedReviewItem({
+                                      ...item,
+                                      canteen_name: order.canteen_name
+                                    })
+                                  }
+                                  className="px-2.5 py-1 bg-orange-500 hover:bg-orange-600 text-white text-[11px] font-bold rounded-lg shadow-2xs transition-colors flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Star className="w-3 h-3 fill-white" />
+                                  <span>Review</span>
+                                </button>
+                              )
+                            ) : (
+                              <span className="text-[10px] text-gray-400">
+                                In Progress
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+
+              <div className="pt-2 text-center">
+                <Link
+                  to="/orders"
+                  className="text-xs font-bold text-orange-600 hover:text-orange-700 inline-flex items-center gap-1 hover:underline"
+                >
+                  <span>Open Full Orders History & Live Tracking</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Daily Budget Limit Setting */}
       <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-100 shadow-xs space-y-4">
         <div className="flex items-center gap-2 text-orange-600 font-bold text-sm">
@@ -218,6 +384,14 @@ export const Profile = () => {
           </div>
         )}
       </div>
+
+      {/* Review Submission Modal */}
+      <ReviewModal
+        isOpen={Boolean(selectedReviewItem)}
+        onClose={() => setSelectedReviewItem(null)}
+        item={selectedReviewItem}
+        onReviewSubmitted={handleReviewSubmitted}
+      />
     </div>
   );
 };

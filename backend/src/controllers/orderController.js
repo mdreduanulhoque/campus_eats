@@ -418,19 +418,27 @@ const getMyOrders = async (req, res) => {
       [req.user.id]
     );
 
-    // Fetch items for these orders
+    // Fetch items for these orders, including user's submitted review if any
     if (orders.length > 0) {
       const orderIds = orders.map(o => o.id);
       const [items] = await pool.query(
-        `SELECT oi.*, m.name, m.image_url
+        `SELECT oi.*, m.name, m.image_url,
+                r.id AS user_review_id,
+                r.rating AS user_review_rating,
+                r.comment AS user_review_comment
          FROM order_items oi
          JOIN menu_items m ON oi.menu_item_id = m.id
+         LEFT JOIN reviews r ON r.menu_item_id = oi.menu_item_id AND r.user_id = ?
          WHERE oi.order_id IN (?)`,
-        [orderIds]
+        [req.user.id, orderIds]
       );
 
       const itemsByOrderId = {};
       items.forEach(item => {
+        item.has_reviewed = !!item.user_review_id;
+        item.user_rating = item.user_review_rating !== null ? parseInt(item.user_review_rating, 10) : null;
+        item.user_comment = item.user_review_comment || null;
+
         if (!itemsByOrderId[item.order_id]) itemsByOrderId[item.order_id] = [];
         itemsByOrderId[item.order_id].push(item);
       });
@@ -548,12 +556,22 @@ const getOrderById = async (req, res) => {
     }
 
     const [items] = await pool.query(
-      `SELECT oi.*, m.name, m.image_url
+      `SELECT oi.*, m.name, m.image_url,
+              r.id AS user_review_id,
+              r.rating AS user_review_rating,
+              r.comment AS user_review_comment
        FROM order_items oi
        JOIN menu_items m ON oi.menu_item_id = m.id
+       LEFT JOIN reviews r ON r.menu_item_id = oi.menu_item_id AND r.user_id = ?
        WHERE oi.order_id = ?`,
-      [orderId]
+      [order.user_id, orderId]
     );
+
+    items.forEach((item) => {
+      item.has_reviewed = !!item.user_review_id;
+      item.user_rating = item.user_review_rating !== null ? parseInt(item.user_review_rating, 10) : null;
+      item.user_comment = item.user_review_comment || null;
+    });
 
     order.items = items;
 

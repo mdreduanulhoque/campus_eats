@@ -19,8 +19,10 @@ import {
   ChevronRight,
   Filter,
   ArrowLeftRight,
-  Check
+  Check,
+  Star
 } from 'lucide-react';
+import { ItemReviewsModal } from '../../components/customer/ItemReviewsModal';
 
 export const HomePage = ({ onOpenCart }) => {
   const { user } = useAuth();
@@ -31,6 +33,7 @@ export const HomePage = ({ onOpenCart }) => {
   const [canteens, setCanteens] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [selectedItemForReviews, setSelectedItemForReviews] = useState(null);
 
   const [selectedCanteenId, setSelectedCanteenId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -319,9 +322,33 @@ export const HomePage = ({ onOpenCart }) => {
                 {/* Item Details */}
                 <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between">
                   <div>
-                    <h3 className="text-base font-bold text-gray-900 leading-snug group-hover:text-orange-600 transition-colors">
-                      {item.name}
-                    </h3>
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="text-base font-bold text-gray-900 leading-snug group-hover:text-orange-600 transition-colors flex-1">
+                        {item.name}
+                      </h3>
+                      <button
+                        onClick={() =>
+                          setSelectedItemForReviews({
+                            ...item,
+                            canteen_name: item.canteen_name
+                          })
+                        }
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/80 text-[11px] font-black shrink-0 transition-colors cursor-pointer"
+                        title={
+                          item.review_count > 0
+                            ? `Rating: ${Number(item.avg_rating).toFixed(1)} (${item.review_count} reviews) - Click to view`
+                            : 'No reviews yet - Click to view'
+                        }
+                      >
+                        <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                        <span>{item.review_count > 0 ? Number(item.avg_rating).toFixed(1) : 'New'}</span>
+                        {item.review_count > 0 && (
+                          <span className="text-[10px] text-amber-700 font-semibold">
+                            ({item.review_count})
+                          </span>
+                        )}
+                      </button>
+                    </div>
                     <p className="text-xs text-gray-500 mt-1 line-clamp-2 leading-relaxed">
                       {item.description || 'Delicious meal freshly prepared upon order.'}
                     </p>
@@ -413,6 +440,13 @@ export const HomePage = ({ onOpenCart }) => {
           <span className="text-sm">View Tray ({totalItemCount})</span>
         </button>
       )}
+
+      {/* Item Reviews Modal */}
+      <ItemReviewsModal
+        isOpen={Boolean(selectedItemForReviews)}
+        onClose={() => setSelectedItemForReviews(null)}
+        item={selectedItemForReviews}
+      />
     </div>
   );
 };

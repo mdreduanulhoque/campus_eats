@@ -79,6 +79,20 @@ export const Navbar = ({ onOpenCart }) => {
                 {/* Customer Controls */}
                 {user.role === 'user' && (
                   <>
+                    {/* My Orders desktop link */}
+                    <Link
+                      to="/orders"
+                      className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                        location.pathname === '/orders'
+                          ? 'bg-orange-500 text-white shadow-xs'
+                          : 'bg-gray-100 text-gray-700 hover:bg-orange-50 hover:text-orange-600'
+                      }`}
+                      title="My Orders & Live Tracking"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>My Orders</span>
+                    </Link>
+
                     {/* Loyalty Points Pill */}
                     <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200 text-amber-800 rounded-full text-xs font-bold shadow-xs">
                       <Award className="w-3.5 h-3.5 text-amber-600" />
