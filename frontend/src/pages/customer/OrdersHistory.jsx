@@ -133,11 +133,16 @@ export const OrdersHistory = () => {
                 {/* Order Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-gray-100">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="text-xs font-black px-2.5 py-0.5 bg-orange-100 text-orange-800 rounded-md">
                         #{order.id}
                       </span>
                       <h3 className="font-extrabold text-base text-gray-900">{order.canteen_name}</h3>
+                      {order.order_group_id && (
+                        <span className="text-[10px] font-black px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full flex items-center gap-1">
+                          🔗 Combined Preorder
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-gray-500 mt-1">
                       Requested Pickup:{' '}
@@ -155,6 +160,28 @@ export const OrdersHistory = () => {
                     <p className="text-lg font-black text-orange-600">{order.total_amount} BDT</p>
                   </div>
                 </div>
+
+                {/* Cross-Canteen Pickup Reminder */}
+                {(() => {
+                  if (!order.order_group_id) return null;
+                  const siblings = orders.filter(
+                    (o) => o.order_group_id === order.order_group_id && o.id !== order.id
+                  );
+                  const pickedUpSiblings = siblings.filter((s) => s.status === 'picked_up');
+                  if (pickedUpSiblings.length === 0) return null;
+
+                  return (
+                    <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-xs text-amber-900">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold">Cross-Canteen Pickup Pending</p>
+                        <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                          You collected items from {pickedUpSiblings.map((s) => s.canteen_name).join(', ')}. Please remember to also collect this order from <strong>{order.canteen_name}</strong> within 30 minutes of the requested pickup time, or the entire preorder will be treated as never picked up.
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Status Stepper Progression */}
                 <div className="py-2">
@@ -277,9 +304,14 @@ export const OrdersHistory = () => {
                   {/* Order Header Summary */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100">
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="text-xs font-bold text-gray-400">#{order.id}</span>
                         <span className="font-extrabold text-sm text-gray-900">{order.canteen_name}</span>
+                        {order.order_group_id && (
+                          <span className="text-[9px] font-bold px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
+                            🔗 Combined
+                          </span>
+                        )}
                         <span
                           className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
                             isCompleted

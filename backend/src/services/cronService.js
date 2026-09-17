@@ -1,13 +1,13 @@
 const cron = require('node-cron');
 const { pool } = require('../config/db');
-const { emitToUser } = require('./socketService');
+const { emitToUser, emitToCanteen } = require('./socketService');
 
 async function checkNoShowOrders() {
   const connection = await pool.getConnection();
   try {
     // Find all 'ready' orders where CURRENT_TIMESTAMP > requested_pickup_time + 30 minutes
     const [expiredOrders] = await connection.query(`
-      SELECT o.id, o.user_id, o.canteen_id, o.requested_pickup_time, u.penalty_flags
+      SELECT o.id, o.user_id, o.canteen_id, o.requested_pickup_time, o.order_group_id, u.penalty_flags
       FROM orders o
       JOIN users u ON o.user_id = u.id
       WHERE o.status = 'ready'
@@ -20,19 +20,69 @@ async function checkNoShowOrders() {
 
     console.log(`[Cron: No-Show Check] Processing ${expiredOrders.length} expired orders...`);
     let blockedCount = 0;
+    const processedOrderIds = new Set();
 
     for (const order of expiredOrders) {
+      if (processedOrderIds.has(order.id)) {
+        continue;
+      }
+
       await connection.beginTransaction();
 
       try {
-        // 1. Update order status to 'no_show'
+        // 1. Update this expired order status to 'no_show'
         await connection.query(
           "UPDATE orders SET status = 'no_show' WHERE id = ?",
           [order.id]
         );
+        processedOrderIds.add(order.id);
 
-        // 2. Increment penalty_flags and check blockade threshold
-        const newFlags = (order.penalty_flags || 0) + 1;
+        let hadPickedUpSibling = false;
+        let siblingOrdersUpdated = [];
+
+        // 2. If part of a combined preorder (order_group_id), check siblings
+        if (order.order_group_id) {
+          const [siblings] = await connection.query(
+            "SELECT id, canteen_id, status, points_earned, total_amount FROM orders WHERE order_group_id = ? AND id != ?",
+            [order.order_group_id, order.id]
+          );
+
+          for (const sibling of siblings) {
+            processedOrderIds.add(sibling.id);
+
+            // Cross-canteen rule: If user picked up from one canteen and did not pick up from the other,
+            // then the picked up order is treated as never picked up (no_show) and points are revoked!
+            if (sibling.status === 'picked_up') {
+              hadPickedUpSibling = true;
+              if (sibling.points_earned > 0) {
+                await connection.query(
+                  'UPDATE users SET loyalty_points = GREATEST(0, loyalty_points - ?) WHERE id = ?',
+                  [sibling.points_earned, order.user_id]
+                );
+              }
+              await connection.query(
+                "UPDATE orders SET status = 'no_show', points_earned = 0 WHERE id = ?",
+                [sibling.id]
+              );
+              siblingOrdersUpdated.push(sibling);
+            } else if (sibling.status === 'ready' || sibling.status === 'pending' || sibling.status === 'accepted' || sibling.status === 'preparing') {
+              // Any other uncompleted portion also marks as no_show
+              await connection.query(
+                "UPDATE orders SET status = 'no_show' WHERE id = ?",
+                [sibling.id]
+              );
+              siblingOrdersUpdated.push(sibling);
+            }
+          }
+        }
+
+        // 3. Increment penalty_flags and check blockade threshold
+        const [userState] = await connection.query(
+          'SELECT penalty_flags FROM users WHERE id = ?',
+          [order.user_id]
+        );
+        const currentFlags = userState[0]?.penalty_flags || 0;
+        const newFlags = currentFlags + 1;
         const shouldBlock = newFlags >= 3;
 
         await connection.query(
@@ -44,11 +94,18 @@ async function checkNoShowOrders() {
           blockedCount++;
         }
 
-        // 3. Record notification
-        const title = shouldBlock ? 'Account Blocked: No-Show Limit Reached' : 'Penalty Warning: No-Show';
-        const message = shouldBlock
-          ? `Order #${order.id} was not picked up within 30 minutes. You have reached 3 penalty strikes and your account has been blocked. Please contact the Local Admin.`
-          : `Order #${order.id} was not picked up within 30 minutes of requested pickup time. You received 1 penalty strike (${newFlags}/3 strikes).`;
+        // 4. Record notification
+        const title = shouldBlock
+          ? 'Account Blocked: No-Show Limit Reached'
+          : (hadPickedUpSibling ? 'Penalty Warning: Combined Preorder Incomplete' : 'Penalty Warning: No-Show');
+
+        const message = hadPickedUpSibling
+          ? (shouldBlock
+              ? `Combined preorder #${order.id} was not picked up from all canteens within 30 minutes. Since part was picked up and the rest abandoned, the entire order was treated as never picked up. You have reached 3 penalty strikes and your account has been blocked.`
+              : `Combined preorder #${order.id} was not picked up from all canteens within 30 minutes. Since part was picked up and the rest abandoned, the entire order was treated as never picked up (no-show), and any points earned were revoked. You received 1 penalty strike (${newFlags}/3 strikes).`)
+          : (shouldBlock
+              ? `Order #${order.id} was not picked up within 30 minutes. You have reached 3 penalty strikes and your account has been blocked. Please contact the Local Admin.`
+              : `Order #${order.id} was not picked up within 30 minutes of requested pickup time. You received 1 penalty strike (${newFlags}/3 strikes).`);
 
         await connection.query(
           'INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)',
@@ -57,7 +114,7 @@ async function checkNoShowOrders() {
 
         await connection.commit();
 
-        // 4. Emit real-time notification to user
+        // 5. Emit real-time notifications to user and canteens
         emitToUser(order.user_id, 'order_status_updated', {
           orderId: order.id,
           status: 'no_show',
@@ -65,6 +122,24 @@ async function checkNoShowOrders() {
           is_blocked: shouldBlock,
           message
         });
+        emitToCanteen(order.canteen_id, 'order_status_updated', {
+          orderId: order.id,
+          status: 'no_show'
+        });
+
+        for (const sib of siblingOrdersUpdated) {
+          emitToUser(order.user_id, 'order_status_updated', {
+            orderId: sib.id,
+            status: 'no_show',
+            penalty_flags: newFlags,
+            is_blocked: shouldBlock,
+            message: 'Treated as never picked up due to uncollected items from another canteen in this combined preorder.'
+          });
+          emitToCanteen(sib.canteen_id, 'order_status_updated', {
+            orderId: sib.id,
+            status: 'no_show'
+          });
+        }
 
       } catch (orderErr) {
         await connection.rollback();

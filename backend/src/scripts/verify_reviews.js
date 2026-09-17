@@ -93,7 +93,25 @@ async function verifyReviews() {
       allPassed = false;
     }
 
-    // 3. Submit valid review for delivered item (item 150 was ordered and picked up in order 45)
+    // Ensure Rahim has a picked_up order for item 150 so it can be reviewed
+    const [existingOrder] = await pool.query(
+      `SELECT oi.id FROM order_items oi
+       JOIN orders o ON oi.order_id = o.id
+       WHERE o.user_id = ? AND oi.menu_item_id = 150 AND o.status = 'picked_up'`,
+      [studentUser.id]
+    );
+    if (existingOrder.length === 0) {
+      const [ordRes] = await pool.query(
+        "INSERT INTO orders (user_id, canteen_id, total_amount, status, requested_pickup_time) VALUES (?, 11, 15.00, 'picked_up', NOW())",
+        [studentUser.id]
+      );
+      await pool.query(
+        "INSERT INTO order_items (order_id, menu_item_id, quantity, price_at_time) VALUES (?, 150, 1, 15.00)",
+        [ordRes.insertId]
+      );
+    }
+
+    // 3. Submit valid review for delivered item (item 150 was ordered and picked up)
     process.stdout.write('[Test 3/7] Submit review for delivered item #150 (Boiled Egg)... ');
     const validReviewRes = await makeRequest(port, 'POST', '/api/reviews', {
       menu_item_id: 150,

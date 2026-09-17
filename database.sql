@@ -60,9 +60,11 @@ CREATE TABLE orders (
         'no_show'            -- User didn't pick up within 30 mins (awards 1 flag)
     ) DEFAULT 'pending',
     requested_pickup_time DATETIME NOT NULL,
+    order_group_id VARCHAR(64) NULL, -- Links orders placed together across multiple canteens
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (canteen_id) REFERENCES canteens(id)
+    FOREIGN KEY (canteen_id) REFERENCES canteens(id),
+    INDEX idx_order_group_id (order_group_id)
 );
 
 -- 5. Order Items (The actual food in the cart)

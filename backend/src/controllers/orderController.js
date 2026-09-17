@@ -13,7 +13,7 @@ const ALLOWED_TRANSITIONS = {
   no_show: []
 };
 
-// POST /api/orders (Customer Checkout)
+// POST /api/orders (Customer Checkout - Supports Single & Multi-Canteen Preorders)
 const createOrder = async (req, res) => {
   const connection = await pool.getConnection();
   try {
@@ -37,11 +37,7 @@ const createOrder = async (req, res) => {
       });
     }
 
-    // 2. Validate Cart and Canteen
-    if (!canteen_id) {
-      return res.status(400).json({ status: 'error', message: 'canteen_id is required.' });
-    }
-
+    // 2. Validate Cart and Pickup Time
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ status: 'error', message: 'Cart items cannot be empty.' });
     }
@@ -85,33 +81,23 @@ const createOrder = async (req, res) => {
       });
     }
 
-    // Verify canteen exists and is currently open
-    const [canteenRows] = await connection.query('SELECT id, name, is_open FROM canteens WHERE id = ?', [canteen_id]);
-    if (canteenRows.length === 0) {
-      return res.status(404).json({ status: 'error', message: 'Canteen not found.' });
-    }
-
-    if (!canteenRows[0].is_open) {
-      return res.status(400).json({
-        status: 'error',
-        code: 'CANTEEN_CLOSED',
-        message: `Canteen '${canteenRows[0].name}' kitchen is currently closed and not accepting orders.`
-      });
-    }
-
-    // 3. Verify and calculate order items
+    // 3. Fetch and validate all menu items and their canteens
     const itemIds = items.map(i => i.menu_item_id);
     const [dbItems] = await connection.query(
-      `SELECT id, canteen_id, name, price, est_prep_time_mins, is_available FROM menu_items WHERE id IN (?)`,
+      `SELECT m.id, m.canteen_id, m.name, m.price, m.est_prep_time_mins, m.is_available,
+              c.name AS canteen_name, c.is_open AS canteen_is_open
+       FROM menu_items m
+       JOIN canteens c ON m.canteen_id = c.id
+       WHERE m.id IN (?)`,
       [itemIds]
     );
 
     const dbItemsMap = {};
     dbItems.forEach(item => { dbItemsMap[item.id] = item; });
 
-    let subtotal = 0;
-    let totalPrepMinutes = 0;
-    const validatedOrderItems = [];
+    // Group items by canteen
+    const itemsByCanteen = {};
+    let overallSubtotal = 0;
 
     for (const item of items) {
       const dbItem = dbItemsMap[item.menu_item_id];
@@ -122,7 +108,8 @@ const createOrder = async (req, res) => {
         });
       }
 
-      if (dbItem.canteen_id !== parseInt(canteen_id, 10)) {
+      // If a specific canteen_id was passed in req.body and items don't match, validate single-canteen constraint
+      if (canteen_id && dbItem.canteen_id !== parseInt(canteen_id, 10) && items.every(i => dbItemsMap[i.menu_item_id]?.canteen_id === parseInt(canteen_id, 10))) {
         return res.status(400).json({
           status: 'error',
           message: `Menu item '${dbItem.name}' does not belong to selected canteen.`
@@ -144,13 +131,26 @@ const createOrder = async (req, res) => {
         });
       }
 
+      const cId = dbItem.canteen_id;
+      if (!itemsByCanteen[cId]) {
+        itemsByCanteen[cId] = {
+          canteen_id: cId,
+          canteen_name: dbItem.canteen_name,
+          canteen_is_open: Boolean(dbItem.canteen_is_open),
+          items: [],
+          subtotal: 0,
+          prepMinutes: 0
+        };
+      }
+
       const itemPrep = parseInt(dbItem.est_prep_time_mins, 10) || 10;
-      totalPrepMinutes += itemPrep * qty;
+      itemsByCanteen[cId].prepMinutes += itemPrep * qty;
 
       const itemTotal = parseFloat(dbItem.price) * qty;
-      subtotal += itemTotal;
+      itemsByCanteen[cId].subtotal += itemTotal;
+      overallSubtotal += itemTotal;
 
-      validatedOrderItems.push({
+      itemsByCanteen[cId].items.push({
         menu_item_id: dbItem.id,
         name: dbItem.name,
         quantity: qty,
@@ -158,13 +158,28 @@ const createOrder = async (req, res) => {
       });
     }
 
+    const canteenGroups = Object.values(itemsByCanteen);
+
+    // Verify all involved canteens are open
+    for (const group of canteenGroups) {
+      if (!group.canteen_is_open) {
+        return res.status(400).json({
+          status: 'error',
+          code: 'CANTEEN_CLOSED',
+          message: `Canteen '${group.canteen_name}' kitchen is currently closed and not accepting orders.`
+        });
+      }
+    }
+
     // Dynamic Pickup Time Window Validation:
-    // 1. Must be after (now + prep_time)
-    // 2. Must be within 2-hour window from now (before now + 2h)
-    const cappedPrepMinutes = Math.min(totalPrepMinutes, 90);
+    // When ordering across multiple canteens, preparation happens concurrently in kitchens.
+    // Minimum pickup time is determined by the slowest canteen's prep time so both orders are ready.
+    const maxPrepMinutes = Math.min(
+      Math.max(...canteenGroups.map(g => g.prepMinutes)),
+      90
+    );
     const orderNow = Date.now();
-    // 30-second leeway for client/server network transit
-    const minPickupTimestamp = orderNow + cappedPrepMinutes * 60 * 1000 - 30000;
+    const minPickupTimestamp = orderNow + maxPrepMinutes * 60 * 1000 - 30000;
     const maxPickupTimestamp = orderNow + 2 * 60 * 60 * 1000 + 30000;
 
     const timeFormatter = new Intl.DateTimeFormat('en-US', {
@@ -175,11 +190,11 @@ const createOrder = async (req, res) => {
     });
 
     if (pickupDate.getTime() < minPickupTimestamp) {
-      const earliestStr = timeFormatter.format(new Date(orderNow + cappedPrepMinutes * 60 * 1000));
+      const earliestStr = timeFormatter.format(new Date(orderNow + maxPrepMinutes * 60 * 1000));
       return res.status(400).json({
         status: 'error',
         code: 'PICKUP_TOO_EARLY',
-        message: `Pickup time must be after ${earliestStr} (at least ${cappedPrepMinutes} mins from now to allow kitchen preparation).`
+        message: `Pickup time must be after ${earliestStr} (at least ${maxPrepMinutes} mins from now to allow kitchen preparation).`
       });
     }
 
@@ -206,8 +221,8 @@ const createOrder = async (req, res) => {
     }
 
     // 1 point = 5 Taka discount
-    const discount = pointsRedeemed * 5;
-    const finalTotal = Math.max(0, subtotal - discount);
+    const totalDiscount = pointsRedeemed * 5;
+    const overallFinalTotal = Math.max(0, overallSubtotal - totalDiscount);
 
     // 5. The Budget Guardrail
     const budgetLimit = parseFloat(user.daily_budget_limit || 0);
@@ -222,25 +237,43 @@ const createOrder = async (req, res) => {
       );
 
       const todaySpent = parseFloat(spentRows[0].today_spent || 0);
-      if (todaySpent + finalTotal > budgetLimit) {
+      if (todaySpent + overallFinalTotal > budgetLimit) {
         return res.status(400).json({
           status: 'error',
           error_code: 'BUDGET_LIMIT_EXCEEDED',
-          message: `Daily budget limit exceeded! You have already spent ${todaySpent.toFixed(2)} BDT today against your ${budgetLimit.toFixed(2)} BDT daily limit. This order (${finalTotal.toFixed(2)} BDT) would bring today's total to ${(todaySpent + finalTotal).toFixed(2)} BDT.`,
+          message: `Daily budget limit exceeded! You have already spent ${todaySpent.toFixed(2)} BDT today against your ${budgetLimit.toFixed(2)} BDT daily limit. This order (${overallFinalTotal.toFixed(2)} BDT) would bring today's total to ${(todaySpent + overallFinalTotal).toFixed(2)} BDT.`,
           data: {
             daily_budget_limit: budgetLimit,
             today_spent: todaySpent,
-            order_total: finalTotal,
+            order_total: overallFinalTotal,
             remaining_budget: Math.max(0, budgetLimit - todaySpent)
           }
         });
       }
     }
 
+    // Distribute redeemed points and discounts across canteen groups
+    let remainingPoints = pointsRedeemed;
+    for (let i = 0; i < canteenGroups.length; i++) {
+      const group = canteenGroups[i];
+      if (i === canteenGroups.length - 1) {
+        // Last group receives whatever remaining points are left
+        group.points_redeemed = remainingPoints;
+      } else {
+        const maxPointsForGroup = Math.floor(group.subtotal / 5);
+        const pts = Math.min(remainingPoints, maxPointsForGroup);
+        group.points_redeemed = pts;
+        remainingPoints -= pts;
+      }
+      group.discount = group.points_redeemed * 5;
+      group.total_amount = Math.max(0, group.subtotal - group.discount);
+    }
+
     // 6. Execute Transaction
+    const orderGroupId = 'grp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
     await connection.beginTransaction();
 
-    // Deduct redeemed points
+    // Deduct redeemed points from user
     if (pointsRedeemed > 0) {
       await connection.query(
         'UPDATE users SET loyalty_points = loyalty_points - ? WHERE id = ?',
@@ -248,48 +281,61 @@ const createOrder = async (req, res) => {
       );
     }
 
-    // Insert order record
-    const [orderResult] = await connection.query(
-      `INSERT INTO orders (user_id, canteen_id, total_amount, points_redeemed, points_earned, status, requested_pickup_time)
-       VALUES (?, ?, ?, ?, 0, 'pending', ?)`,
-      [userId, canteen_id, finalTotal, pointsRedeemed, pickupDate]
-    );
+    const createdOrders = [];
 
-    const orderId = orderResult.insertId;
-
-    // Insert order items
-    for (const oi of validatedOrderItems) {
-      await connection.query(
-        `INSERT INTO order_items (order_id, menu_item_id, quantity, price_at_time)
-         VALUES (?, ?, ?, ?)`,
-        [orderId, oi.menu_item_id, oi.quantity, oi.price_at_time]
+    // Create separate order records for each canteen with the identical requested_pickup_time
+    for (const group of canteenGroups) {
+      const [orderResult] = await connection.query(
+        `INSERT INTO orders (user_id, canteen_id, total_amount, points_redeemed, points_earned, status, requested_pickup_time, order_group_id)
+         VALUES (?, ?, ?, ?, 0, 'pending', ?, ?)`,
+        [userId, group.canteen_id, group.total_amount, group.points_redeemed, pickupDate, orderGroupId]
       );
+
+      const orderId = orderResult.insertId;
+
+      for (const oi of group.items) {
+        await connection.query(
+          `INSERT INTO order_items (order_id, menu_item_id, quantity, price_at_time)
+           VALUES (?, ?, ?, ?)`,
+          [orderId, oi.menu_item_id, oi.quantity, oi.price_at_time]
+        );
+      }
+
+      const createdOrder = {
+        id: orderId,
+        user_id: userId,
+        canteen_id: group.canteen_id,
+        canteen_name: group.canteen_name,
+        total_amount: group.total_amount,
+        subtotal: group.subtotal,
+        discount: group.discount,
+        points_redeemed: group.points_redeemed,
+        status: 'pending',
+        requested_pickup_time,
+        order_group_id: orderGroupId,
+        items: group.items
+      };
+
+      createdOrders.push(createdOrder);
     }
 
     await connection.commit();
 
-    const createdOrder = {
-      id: orderId,
-      user_id: userId,
-      canteen_id: parseInt(canteen_id, 10),
-      canteen_name: canteenRows[0].name,
-      total_amount: finalTotal,
-      subtotal,
-      discount,
-      points_redeemed: pointsRedeemed,
-      status: 'pending',
-      requested_pickup_time,
-      items: validatedOrderItems
-    };
-
-    // 7. Emit Real-Time Socket Event to Canteen Room
-    emitToCanteen(canteen_id, 'new_order', createdOrder);
+    // 7. Emit Real-Time Socket Events to Respective Canteens and User
+    for (const ord of createdOrders) {
+      emitToCanteen(ord.canteen_id, 'new_order', ord);
+    }
+    emitToUser(userId, 'new_orders', { order_group_id: orderGroupId, orders: createdOrders });
 
     res.status(201).json({
       status: 'success',
-      message: 'Order placed successfully.',
+      message: createdOrders.length > 1
+        ? `Preorder successfully divided into ${createdOrders.length} separate orders with identical pickup time.`
+        : 'Order placed successfully.',
       data: {
-        order: createdOrder
+        order: createdOrders[0],
+        orders: createdOrders,
+        order_group_id: orderGroupId
       }
     });
 
@@ -369,6 +415,21 @@ const updateOrderStatus = async (req, res) => {
         status: 'error',
         message: `Invalid status transition from '${currentStatus}' to '${targetStatus}'. Allowed transitions: ${allowedTransitions.join(', ') || 'None (Terminal state)'}`
       });
+    }
+
+    // Cross-canteen guard: Cannot pick up if another order in the combined preorder is already marked no_show
+    if (targetStatus === 'picked_up' && order.order_group_id) {
+      const [noShowSiblings] = await connection.query(
+        "SELECT id, canteen_id FROM orders WHERE order_group_id = ? AND status = 'no_show'",
+        [order.order_group_id]
+      );
+      if (noShowSiblings.length > 0) {
+        return res.status(400).json({
+          status: 'error',
+          code: 'ORDER_GROUP_NO_SHOW',
+          message: `Cannot pick up order #${orderId}. Part of this combined preorder was abandoned or never picked up within the allowed pickup window.`
+        });
+      }
     }
 
     await connection.beginTransaction();

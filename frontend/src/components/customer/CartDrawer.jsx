@@ -21,15 +21,21 @@ export const CartDrawer = ({ isOpen, onClose }) => {
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Calculate total required preparation time for the cart items
-  const totalPrepMinutes = Math.min(
-    cart.items.reduce((sum, item) => {
-      const prep = parseInt(item.est_prep_time_mins, 10) || 10;
-      const qty = parseInt(item.quantity, 10) || 1;
-      return sum + prep * qty;
-    }, 0),
-    90
-  );
+  // Calculate preparation time for the cart items.
+  // In a multi-canteen preorder, kitchens prepare orders concurrently.
+  // Hence the minimum wait time before pickup is dictated by the slowest canteen's prep time.
+  const prepTimeByCanteen = {};
+  cart.items.forEach((item) => {
+    const cId = item.canteen_id || 'single';
+    const prep = parseInt(item.est_prep_time_mins, 10) || 10;
+    const qty = parseInt(item.quantity, 10) || 1;
+    prepTimeByCanteen[cId] = (prepTimeByCanteen[cId] || 0) + prep * qty;
+  });
+
+  const canteenPrepValues = Object.values(prepTimeByCanteen);
+  const totalPrepMinutes = canteenPrepValues.length > 0
+    ? Math.min(Math.max(...canteenPrepValues), 90)
+    : 10;
 
   // Dynamic window calculations
   const now = new Date();
@@ -116,11 +122,14 @@ export const CartDrawer = ({ isOpen, onClose }) => {
       const isoPickup = selectedDate.toISOString();
 
       const payload = {
-        canteen_id: cart.canteenId,
         items: cart.items.map((i) => ({ menu_item_id: i.id, quantity: i.quantity })),
         requested_pickup_time: isoPickup,
         points_to_redeem: pointsToRedeem
       };
+
+      if (cart.canteenId) {
+        payload.canteen_id = cart.canteenId;
+      }
 
       const res = await api.post('/orders', payload);
       const newOrder = res.data.data.order;
@@ -141,6 +150,16 @@ export const CartDrawer = ({ isOpen, onClose }) => {
 
   const userPoints = user?.loyalty_points || 0;
   const maxRedeemable = Math.min(userPoints, Math.floor(subtotal / 5));
+
+  // Group items by canteen for clear presentation
+  const itemsByCanteenGroup = cart.items.reduce((acc, item) => {
+    const cName = item.canteen_name || 'Selected Canteen';
+    if (!acc[cName]) acc[cName] = [];
+    acc[cName].push(item);
+    return acc;
+  }, {});
+
+  const isMultiCanteen = Object.keys(itemsByCanteenGroup).length > 1;
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
@@ -181,43 +200,59 @@ export const CartDrawer = ({ isOpen, onClose }) => {
                 <p className="text-xs text-gray-400 mt-1">Browse canteen menus to add tasty meals!</p>
               </div>
             ) : (
-              cart.items.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-2xl border border-gray-100"
-                >
-                  <div className="flex-1 pr-3">
-                    <p className="font-bold text-sm text-gray-900 leading-snug">{item.name}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">{item.price} BDT each</p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center bg-white border border-gray-200 rounded-xl shadow-2xs">
-                      <button
-                        onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                        className="p-1.5 text-gray-500 hover:text-orange-600 transition-colors"
-                      >
-                        <Minus className="w-3.5 h-3.5" />
-                      </button>
-                      <span className="w-6 text-center text-xs font-bold text-gray-900">
-                        {item.quantity}
+              Object.entries(itemsByCanteenGroup).map(([canteenName, groupItems]) => (
+                <div key={canteenName} className="space-y-2.5">
+                  {isMultiCanteen && (
+                    <div className="flex items-center justify-between px-1 pt-1">
+                      <span className="text-xs font-black text-orange-950 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-orange-500 inline-block" />
+                        {canteenName}
                       </span>
-                      <button
-                        onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                        className="p-1.5 text-gray-500 hover:text-orange-600 transition-colors"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
+                      <span className="text-[10px] text-gray-400 font-bold">
+                        {groupItems.length} item{groupItems.length > 1 ? 's' : ''}
+                      </span>
                     </div>
+                  )}
 
-                    <button
-                      onClick={() => removeItem(item.id)}
-                      className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
-                      title="Remove"
+                  {groupItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between p-3 bg-gray-50 rounded-2xl border border-gray-100"
                     >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                      <div className="flex-1 pr-3">
+                        <p className="font-bold text-sm text-gray-900 leading-snug">{item.name}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{item.price} BDT each</p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center bg-white border border-gray-200 rounded-xl shadow-2xs">
+                          <button
+                            onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                            className="p-1.5 text-gray-500 hover:text-orange-600 transition-colors"
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                          </button>
+                          <span className="w-6 text-center text-xs font-bold text-gray-900">
+                            {item.quantity}
+                          </span>
+                          <button
+                            onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                            className="p-1.5 text-gray-500 hover:text-orange-600 transition-colors"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        <button
+                          onClick={() => removeItem(item.id)}
+                          className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                          title="Remove"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ))
             )}
@@ -260,6 +295,18 @@ export const CartDrawer = ({ isOpen, onClose }) => {
                       </div>
                       <p className="text-[10px] text-orange-800/80 leading-relaxed">
                         Must be after {formatTimeOnly(effectiveMin)} (prep time) and within 2 hours from now. Canteen hours: 7:00 AM – 7:00 PM.
+                      </p>
+                    </div>
+                  )}
+
+                  {isMultiCanteen && !isWindowClosed && (
+                    <div className="p-2.5 rounded-xl bg-amber-50/90 border border-amber-200 text-[11px] text-amber-950 space-y-1">
+                      <div className="flex items-center gap-1 font-bold text-amber-900">
+                        <span>🍱</span>
+                        <span>Multi-Canteen Preorder Pickup Rule</span>
+                      </div>
+                      <p className="text-[10px] text-amber-800 leading-relaxed">
+                        This checkout will be divided into separate canteen preorders with the <strong>exact same pickup time</strong>. You must pick up your items from each canteen. If items from one canteen are not collected, the preorder is treated as never picked up.
                       </p>
                     </div>
                   )}
